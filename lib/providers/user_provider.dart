@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class User {
   final String id;
@@ -29,10 +30,23 @@ class User {
 class UserProvider extends ChangeNotifier {
   User? _currentUser;
   bool _isAuthenticated = false;
+  String? _localProfileImagePath; // local file path for instant preview
 
   User? get currentUser => _currentUser;
-  User? get user => _currentUser; // Add getter for 'user'
+  User? get user => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
+  String? get localProfileImagePath => _localProfileImagePath;
+
+  /// Show a local file immediately as the avatar while upload is in progress.
+  void setLocalProfileImage(String path) {
+    _localProfileImagePath = path;
+    notifyListeners();
+  }
+
+  void clearLocalProfileImage() {
+    _localProfileImagePath = null;
+    // no notify needed — called after remote URL is set
+  }
 
   void setUser(User user) {
     _currentUser = user;
@@ -44,6 +58,26 @@ class UserProvider extends ChangeNotifier {
     try {
       final firebaseUser = firebase_auth.FirebaseAuth.instance.currentUser;
       if (firebaseUser != null) {
+        // Show cached profile image immediately (before Firestore round-trip)
+        final prefs = await SharedPreferences.getInstance();
+        final cachedUrl = prefs.getString(
+          'profileImageUrl_${firebaseUser.uid}',
+        );
+        if (cachedUrl != null && _currentUser == null) {
+          _currentUser = User(
+            id: firebaseUser.uid,
+            email: firebaseUser.email ?? '',
+            name: firebaseUser.email?.split('@')[0] ?? 'User',
+            profileImageUrl: cachedUrl,
+            selectedLanguage: 'urdu',
+            points: 0,
+            level: 1,
+            unlockedBadges: [],
+            createdAt: DateTime.now(),
+          );
+          notifyListeners();
+        }
+
         // Get user data from Firestore
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
@@ -53,12 +87,21 @@ class UserProvider extends ChangeNotifier {
         if (userDoc.exists) {
           final data = userDoc.data()!;
           final emailPrefix = firebaseUser.email?.split('@')[0] ?? 'User';
+          final remoteUrl = data['profileImageUrl'] as String?;
+
+          // Keep cache in sync
+          if (remoteUrl != null) {
+            await prefs.setString(
+              'profileImageUrl_${firebaseUser.uid}',
+              remoteUrl,
+            );
+          }
 
           _currentUser = User(
             id: firebaseUser.uid,
             email: firebaseUser.email ?? '',
             name: data['displayName'] ?? emailPrefix,
-            profileImageUrl: data['profileImageUrl'],
+            profileImageUrl: remoteUrl ?? cachedUrl,
             selectedLanguage: data['selectedLanguage'] ?? 'urdu',
             points: (data['totalXP'] ?? data['totalPoints'] ?? 0) as int,
             level:
@@ -142,6 +185,10 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> updateProfileImage(String imageUrl) async {
     if (_currentUser != null) {
+      // Cache URL locally for instant display on next open
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('profileImageUrl_${_currentUser!.id}', imageUrl);
+
       _currentUser = User(
         id: _currentUser!.id,
         email: _currentUser!.email,
@@ -154,13 +201,18 @@ class UserProvider extends ChangeNotifier {
         createdAt: _currentUser!.createdAt,
       );
 
-      // Update Firestore
-      await FirebaseFirestore.instance
+      notifyListeners(); // Update UI immediately with new URL
+
+      clearLocalProfileImage(); // remote URL is set — drop the local file path
+
+      // Persist to Firestore in the background
+      FirebaseFirestore.instance
           .collection('users')
           .doc(_currentUser!.id)
-          .update({'profileImageUrl': imageUrl});
-
-      notifyListeners();
+          .update({'profileImageUrl': imageUrl})
+          .catchError(
+            (e) => debugPrint('⚠ Firestore profile update error: $e'),
+          );
     }
   }
 

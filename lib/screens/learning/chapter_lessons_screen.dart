@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../services/chapter_service.dart';
 import '../../data/vocabulary_data.dart';
-import 'lesson_content_screen.dart';
+import '../../providers/learning_provider.dart';
+import 'teaching_lesson_screen.dart';
+import 'chapter_quiz_screen.dart';
 
-/// Screen showing all lessons within a chapter
+/// Premium chapter lessons screen with learning path
 class ChapterLessonsScreen extends StatefulWidget {
   final ChapterModel chapter;
-
   const ChapterLessonsScreen({super.key, required this.chapter});
-
   @override
   State<ChapterLessonsScreen> createState() => _ChapterLessonsScreenState();
 }
@@ -38,12 +40,21 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final learningProvider = Provider.of<LearningProvider>(context);
+    final completedLessons = learningProvider.getCompletedLessonsCount(
+      widget.chapter.id,
+    );
+    final progress = _lessons.isEmpty
+        ? 0.0
+        : (completedLessons / _lessons.length).clamp(0.0, 1.0);
+    final totalWords = _lessons.fold<int>(0, (sum, l) => sum + l.words.length);
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
       body: CustomScrollView(
         slivers: [
-          // Chapter Header
+          // ─── HEADER ───
           SliverAppBar(
-            expandedHeight: 220,
+            expandedHeight: 180,
             pinned: true,
             backgroundColor: widget.chapter.color,
             leading: IconButton(
@@ -64,76 +75,76 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
                 ),
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Chapter Icon
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Icon(
-                              widget.chapter.icon,
-                              size: 32,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Title
-                          Text(
-                            widget.chapter.titleEnglish,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            widget.chapter.title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              color: Colors.white70,
-                              fontFamily: 'NotoNastaliqUrdu',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Progress
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: LinearProgressIndicator(
-                                    value: widget.chapter.progress,
-                                    backgroundColor: Colors.white.withOpacity(
-                                      0.3,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Row(
+                          children: [
+                            // Circular progress ring
+                            SizedBox(
+                              width: 60,
+                              height: 60,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 60,
+                                    height: 60,
+                                    child: CircularProgressIndicator(
+                                      value: progress,
+                                      strokeWidth: 5,
+                                      backgroundColor: Colors.white.withOpacity(
+                                        0.2,
+                                      ),
+                                      valueColor: const AlwaysStoppedAnimation(
+                                        Colors.white,
+                                      ),
                                     ),
-                                    valueColor: const AlwaysStoppedAnimation(
-                                      Colors.white,
-                                    ),
-                                    minHeight: 8,
                                   ),
-                                ),
+                                  Icon(
+                                    widget.chapter.icon,
+                                    size: 26,
+                                    color: Colors.white,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '${(widget.chapter.progress * 100).toInt()}%',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.chapter.titleEnglish,
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    widget.chapter.title,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white70,
+                                      fontFamily: 'NotoNastaliqUrdu',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${(progress * 100).toInt()}% complete • $totalWords words',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -141,19 +152,66 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
             ),
           ),
 
-          // Chapter Description
+          // ─── CHAPTER STATS ───
           SliverToBoxAdapter(
             child: Container(
-              margin: const EdgeInsets.all(16),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  _statCard(
+                    Icons.menu_book,
+                    '${_lessons.length}',
+                    'Lessons',
+                    widget.chapter.color,
+                  ),
+                  _statCard(
+                    Icons.text_fields,
+                    '$totalWords',
+                    'Words',
+                    AppTheme.blue,
+                  ),
+                  _divider(),
+                  _statCard(
+                    Icons.chat_bubble_outline,
+                    '$totalWords',
+                    'Sentences',
+                    AppTheme.purple,
+                  ),
+                  _divider(),
+                  _statCard(
+                    Icons.timer,
+                    '~${_lessons.length * 5}m',
+                    'Time',
+                    AppTheme.orange,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ─── WHAT YOU'LL LEARN ───
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
                   ),
                 ],
               ),
@@ -162,8 +220,19 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, color: widget.chapter.color),
-                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: widget.chapter.color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.lightbulb_outline,
+                          color: widget.chapter.color,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       const Text(
                         'What you\'ll learn',
                         style: TextStyle(
@@ -174,56 +243,79 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    widget.chapter.description,
-                    style: const TextStyle(fontSize: 14, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: widget.chapter.topics.map((topic) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: widget.chapter.color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: widget.chapter.color.withOpacity(0.3),
+                    children: widget.chapter.topics
+                        .map(
+                          (t) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  widget.chapter.color.withOpacity(0.08),
+                                  widget.chapter.color.withOpacity(0.04),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: widget.chapter.color.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Text(
+                              t,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: widget.chapter.color,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          topic,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: widget.chapter.color,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                        )
+                        .toList(),
                   ),
                 ],
               ),
             ),
           ),
 
-          // Lessons Header
+          // ─── LEARNING PATH HEADER ───
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.menu_book, color: widget.chapter.color),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: widget.chapter.color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.route,
+                      color: widget.chapter.color,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Text(
-                    'Lessons (${_lessons.length})',
-                    style: const TextStyle(
+                    'Learning Path',
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$completedLessons/${_lessons.length} done',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: widget.chapter.color,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -231,34 +323,32 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
             ),
           ),
 
-          // Lessons List
+          // ─── LESSON CARDS ───
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate((context, index) {
                 if (index >= _lessons.length) return null;
-
                 final lesson = _lessons[index];
-                final isLocked =
-                    index > 0 && widget.chapter.completedLessons < index;
-                final isCompleted = widget.chapter.completedLessons > index;
+                final isLocked = index > 0 && completedLessons < index;
+                final isCompleted = completedLessons > index;
+                final isCurrent = !isLocked && !isCompleted;
 
                 return TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0.0, end: 1.0),
                   duration: Duration(milliseconds: 400 + (index * 100)),
                   curve: Curves.easeOutCubic,
-                  builder: (context, value, child) {
-                    return Transform.translate(
-                      offset: Offset(50 * (1 - value), 0),
-                      child: Opacity(opacity: value, child: child),
-                    );
-                  },
-                  child: _LessonCard(
+                  builder: (context, value, child) => Transform.translate(
+                    offset: Offset(0, 30 * (1 - value)),
+                    child: Opacity(opacity: value, child: child),
+                  ),
+                  child: _PremiumLessonCard(
                     lesson: lesson,
                     lessonNumber: index + 1,
                     chapter: widget.chapter,
                     isLocked: isLocked,
                     isCompleted: isCompleted,
+                    isCurrent: isCurrent,
                     onTap: isLocked
                         ? null
                         : () => _navigateToLesson(context, index, lesson),
@@ -268,32 +358,133 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
             ),
           ),
 
-          // Chapter Quiz Button
+          // ─── CHAPTER QUIZ ───
           SliverToBoxAdapter(
             child: Container(
-              margin: const EdgeInsets.all(16),
-              child: ElevatedButton.icon(
-                onPressed: widget.chapter.progress >= 0.8
-                    ? () => _startChapterQuiz(context)
-                    : null,
-                icon: const Icon(Icons.quiz),
-                label: const Text('Chapter Review Quiz'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.chapter.color,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  disabledBackgroundColor: Colors.grey.shade300,
-                ),
-              ),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: _buildQuizButton(progress),
             ),
           ),
 
-          // Bottom Padding
           const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
         ],
+      ),
+    );
+  }
+
+  Widget _statCard(IconData icon, String value, String label, Color color) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() =>
+      Container(width: 1, height: 40, color: Colors.grey.shade200);
+
+  Widget _buildQuizButton(double progress) {
+    final canTakeQuiz = progress >= 0.999;
+    final learningProvider = Provider.of<LearningProvider>(
+      context,
+      listen: false,
+    );
+    final quizScore = learningProvider.getChapterQuizScore(widget.chapter.id);
+    final quizPassed = learningProvider.isChapterQuizPassed(widget.chapter.id);
+
+    return GestureDetector(
+      onTap: canTakeQuiz ? () => _startChapterQuiz(context) : null,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: canTakeQuiz
+              ? LinearGradient(
+                  colors: quizPassed
+                      ? [Colors.green, Colors.green.shade600]
+                      : [
+                          widget.chapter.color,
+                          widget.chapter.color.withOpacity(0.8),
+                        ],
+                )
+              : null,
+          color: canTakeQuiz ? null : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: canTakeQuiz
+              ? [
+                  BoxShadow(
+                    color: (quizPassed ? Colors.green : widget.chapter.color)
+                        .withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (canTakeQuiz ? Colors.white : Colors.grey).withOpacity(
+                  0.2,
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                quizPassed ? Icons.check_circle : Icons.quiz,
+                color: canTakeQuiz ? Colors.white : Colors.grey,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chapter Quiz (20 Questions)',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: canTakeQuiz ? Colors.white : Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    quizPassed
+                        ? 'Passed with ${quizScore?.toInt()}%! ✓'
+                        : quizScore != null
+                        ? 'Score: ${quizScore.toInt()}% - Need 80% to pass'
+                        : canTakeQuiz
+                        ? 'Score 80%+ to unlock next chapter'
+                        : 'Complete all lessons to unlock',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: canTakeQuiz ? Colors.white70 : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              canTakeQuiz
+                  ? (quizPassed ? Icons.replay : Icons.arrow_forward_rounded)
+                  : Icons.lock_outline,
+              color: canTakeQuiz ? Colors.white : Colors.grey,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -306,41 +497,46 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LessonContentScreen(
+        builder: (_) => TeachingLessonScreen(
           chapter: widget.chapter,
           lessonIndex: index,
           lesson: lesson,
         ),
       ),
+    ).then(
+      (_) => setState(() {
+        _lessons = widget.chapter.getLessons();
+      }),
     );
   }
 
   void _startChapterQuiz(BuildContext context) {
-    // TODO: Navigate to chapter review quiz
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Complete at least 80% of lessons first!'),
-        backgroundColor: widget.chapter.color,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChapterQuizScreen(chapter: widget.chapter),
       ),
     );
   }
 }
 
-/// Lesson Card Widget
-class _LessonCard extends StatelessWidget {
+/// Premium lesson card with enhanced visuals
+class _PremiumLessonCard extends StatelessWidget {
   final LessonVocabulary lesson;
   final int lessonNumber;
   final ChapterModel chapter;
   final bool isLocked;
   final bool isCompleted;
+  final bool isCurrent;
   final VoidCallback? onTap;
 
-  const _LessonCard({
+  const _PremiumLessonCard({
     required this.lesson,
     required this.lessonNumber,
     required this.chapter,
     required this.isLocked,
     required this.isCompleted,
+    required this.isCurrent,
     this.onTap,
   });
 
@@ -352,116 +548,186 @@ class _LessonCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isLocked ? Colors.grey.shade100 : Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              color: isLocked ? Colors.grey.shade50 : Colors.white,
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isCompleted
                     ? AppTheme.primaryGreen
-                    : isLocked
-                    ? Colors.grey.shade300
-                    : chapter.color.withOpacity(0.3),
-                width: isCompleted ? 2 : 1,
+                    : isCurrent
+                    ? chapter.color
+                    : Colors.grey.shade200,
+                width: isCurrent
+                    ? 2
+                    : isCompleted
+                    ? 2
+                    : 1,
               ),
               boxShadow: isLocked
                   ? []
                   : [
                       BoxShadow(
-                        color: chapter.color.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                        color: (isCurrent ? chapter.color : Colors.black)
+                            .withOpacity(0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
             ),
             child: Row(
               children: [
-                // Lesson Number Circle
+                // Lesson number with status
                 Container(
-                  width: 50,
-                  height: 50,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
-                    color: isLocked
-                        ? Colors.grey.shade200
-                        : isCompleted
-                        ? AppTheme.primaryGreen
-                        : chapter.color.withOpacity(0.2),
+                    gradient: isCompleted
+                        ? const LinearGradient(
+                            colors: [
+                              AppTheme.primaryGreen,
+                              AppTheme.lightGreen,
+                            ],
+                          )
+                        : isCurrent
+                        ? LinearGradient(
+                            colors: [
+                              chapter.color,
+                              chapter.color.withOpacity(0.7),
+                            ],
+                          )
+                        : null,
+                    color: isLocked ? Colors.grey.shade200 : null,
                     shape: BoxShape.circle,
+                    boxShadow: isCurrent
+                        ? [
+                            BoxShadow(
+                              color: chapter.color.withOpacity(0.3),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : [],
                   ),
                   child: Center(
                     child: isLocked
                         ? const Icon(Icons.lock, color: Colors.grey, size: 20)
                         : isCompleted
-                        ? const Icon(Icons.check, color: Colors.white, size: 24)
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          )
                         : Text(
                             '$lessonNumber',
-                            style: TextStyle(
-                              fontSize: 18,
+                            style: const TextStyle(
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: chapter.color,
+                              color: Colors.white,
                             ),
                           ),
                   ),
                 ),
-
-                const SizedBox(width: 16),
-
-                // Lesson Info
+                const SizedBox(width: 14),
+                // Lesson info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              lesson.titleEnglish,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isLocked ? Colors.grey : Colors.black87,
+                              ),
+                            ),
+                          ),
+                          if (isCompleted)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryGreen.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                '✓ Done',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.primaryGreen,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          if (isCurrent)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: chapter.color.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Start →',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: chapter.color,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         lesson.title,
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isLocked ? Colors.grey : Colors.black87,
+                          fontSize: 13,
+                          color: isLocked
+                              ? Colors.grey.shade400
+                              : Colors.black45,
+                          fontFamily: 'NotoNastaliqUrdu',
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          Icon(
+                          _infoPill(
                             Icons.text_fields,
-                            size: 14,
-                            color: isLocked ? Colors.grey : chapter.color,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
                             '${lesson.words.length} words',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isLocked ? Colors.grey : Colors.black54,
-                            ),
+                            isLocked ? Colors.grey : chapter.color,
                           ),
-                          const SizedBox(width: 12),
-                          Icon(
+                          const SizedBox(width: 8),
+                          _infoPill(
+                            Icons.chat_bubble_outline,
+                            '${lesson.words.where((w) => w.hasSentence).length} sentences',
+                            isLocked ? Colors.grey : AppTheme.blue,
+                          ),
+                          const SizedBox(width: 8),
+                          _infoPill(
                             Icons.timer,
-                            size: 14,
-                            color: isLocked ? Colors.grey : chapter.color,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
                             '~5 min',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isLocked ? Colors.grey : Colors.black54,
-                            ),
+                            isLocked ? Colors.grey : AppTheme.orange,
                           ),
                         ],
                       ),
-
-                      // Preview words
+                      // Word preview
                       if (!isLocked) ...[
                         const SizedBox(height: 8),
                         Text(
-                          lesson.words.take(3).map((w) => w.urdu).join(' • '),
-                          style: TextStyle(
+                          lesson.words.take(4).map((w) => w.urdu).join(' • '),
+                          style: const TextStyle(
                             fontSize: 14,
-                            color: Colors.black45,
+                            color: Colors.black26,
                             fontFamily: 'NotoNastaliqUrdu',
                           ),
                           maxLines: 1,
@@ -471,26 +737,29 @@ class _LessonCard extends StatelessWidget {
                     ],
                   ),
                 ),
-
-                // Status Icon
-                Icon(
-                  isLocked
-                      ? Icons.lock_outline
-                      : isCompleted
-                      ? Icons.check_circle
-                      : Icons.play_circle_outline,
-                  color: isLocked
-                      ? Colors.grey
-                      : isCompleted
-                      ? AppTheme.primaryGreen
-                      : chapter.color,
-                  size: 32,
-                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _infoPill(IconData icon, String text, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color.withOpacity(0.7)),
+        const SizedBox(width: 3),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 10,
+            color: color.withOpacity(0.7),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

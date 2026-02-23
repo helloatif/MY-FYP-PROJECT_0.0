@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../config/api_keys.dart';
 
 /// Service for XLM-RoBERTa based language translation and learning
 /// Uses Hugging Face API for multilingual support
@@ -10,8 +11,8 @@ class AILanguageService {
       'facebook/mbart-large-50-many-to-many-mmt';
   static const String _xlmRobertaModel = 'xlm-roberta-base';
 
-  // Replace with your Hugging Face API token
-  static const String _apiToken = 'YOUR_HUGGING_FACE_API_TOKEN';
+  // API token loaded from config
+  static const String _apiToken = ApiKeys.huggingFaceToken;
 
   /// Translate text from source language to target language
   /// Supports: urdu (ur), punjabi (pa), english (en)

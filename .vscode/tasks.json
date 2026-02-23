@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run on Android Device",
+			"type": "shell",
+			"command": "flutter run -d R5CY536XSAX",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run on Android Device",
+			"type": "shell",
+			"command": "flutter run -d R5CY536XSAX",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

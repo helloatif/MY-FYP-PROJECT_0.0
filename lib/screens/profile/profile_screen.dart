@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../../themes/app_theme.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/learning_provider.dart';
 import '../../services/firebase_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -24,35 +26,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 75,
+        maxWidth: 300,
+        maxHeight: 300,
+        imageQuality: 50, // ~10-40 KB for most photos
       );
 
       if (image == null) return;
+
+      // --- Size guard: reject files over 1 MB ---
+      final bytes = await image.readAsBytes();
+      const int maxBytes = 1 * 1024 * 1024; // 1 MB
+      if (bytes.length > maxBytes) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Image too large (${(bytes.length / 1024).round()} KB). '
+                'Maximum allowed size is 1 MB.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
 
       setState(() => _isUploadingImage = true);
 
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       final userId = userProvider.currentUser!.id;
 
-      // Upload to Firebase Storage
+      // Show local preview immediately — no waiting for upload
+      final localPath = image.path;
+      userProvider.setLocalProfileImage(localPath);
+
+      // Upload bytes (faster than putFile — no extra disk read)
       final storageRef = FirebaseStorage.instance
           .ref()
           .child('profile_pictures')
           .child('$userId.jpg');
 
-      await storageRef.putFile(File(image.path));
+      await storageRef.putData(
+        bytes,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          // Cache for 30 days on CDN — makes subsequent loads instant
+          cacheControl: 'public, max-age=2592000',
+        ),
+      );
       final downloadUrl = await storageRef.getDownloadURL();
 
-      // Update user profile
+      // Persist the remote URL (also caches in SharedPreferences)
       await userProvider.updateProfileImage(downloadUrl);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile picture updated successfully!'),
+            content: Text('Profile picture updated!'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
       }
@@ -75,18 +107,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     // Load user data if not already loaded
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      if (userProvider.currentUser == null) {
-        await userProvider.loadUserFromFirebase();
-      }
+      try {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        final gamificationProvider = Provider.of<GamificationProvider>(
+          context,
+          listen: false,
+        );
 
-      // Load gamification data if not loaded
-      final gamificationProvider = Provider.of<GamificationProvider>(
-        context,
-        listen: false,
-      );
-      if (!gamificationProvider.isLoaded) {
-        await gamificationProvider.loadFromFirestore();
+        // Load both in parallel for faster loading
+        await Future.wait([
+          if (userProvider.currentUser == null)
+            userProvider.loadUserFromFirebase(),
+          if (!gamificationProvider.isLoaded)
+            gamificationProvider.loadFromFirestore(),
+        ]);
+      } catch (e) {
+        debugPrint('⚠ Profile load error: $e');
       }
     });
   }
@@ -94,7 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Profile')),
+      backgroundColor: const Color(0xFFF5F7FA),
       body: Consumer<UserProvider>(
         builder: (context, userProvider, _) {
           if (userProvider.currentUser == null) {
@@ -117,8 +153,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     // Profile Header
                     Container(
-                      color: AppTheme.primaryGreen,
-                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      padding: EdgeInsets.only(
+                        top: MediaQuery.of(context).padding.top + 16,
+                        bottom: 32,
+                        left: 24,
+                        right: 24,
+                      ),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF8B4DFF), Color(0xFF6C3CE7)],
+                        ),
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(32),
+                          bottomRight: Radius.circular(32),
+                        ),
+                      ),
                       child: Column(
                         children: [
                           // Avatar with Upload Button
@@ -142,70 +193,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ],
                                 ),
                                 child: ClipOval(
-                                  child:
-                                      userProvider
-                                              .currentUser!
-                                              .profileImageUrl !=
-                                          null
-                                      ? Image.network(
-                                          userProvider
-                                              .currentUser!
-                                              .profileImageUrl!,
-                                          fit: BoxFit.cover,
-                                          loadingBuilder:
-                                              (
-                                                context,
-                                                child,
-                                                loadingProgress,
-                                              ) {
-                                                if (loadingProgress == null)
-                                                  return child;
-                                                return Container(
-                                                  color: AppTheme.accentGreen,
-                                                  child: const Center(
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          color: Colors.white,
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  ),
-                                                );
-                                              },
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                                return Container(
-                                                  color: AppTheme.accentGreen,
-                                                  child: Center(
-                                                    child: Text(
-                                                      userProvider
-                                                          .currentUser!
-                                                          .name[0]
-                                                          .toUpperCase(),
-                                                      style: const TextStyle(
-                                                        fontSize: 50,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: AppTheme.white,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                        )
-                                      : Container(
-                                          color: AppTheme.accentGreen,
-                                          child: Center(
-                                            child: Text(
-                                              userProvider.currentUser!.name[0]
-                                                  .toUpperCase(),
-                                              style: const TextStyle(
-                                                fontSize: 50,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppTheme.white,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
+                                  child: _buildAvatar(userProvider),
                                 ),
                               ),
                               // Edit Button
@@ -470,6 +458,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             );
                             if (confirm == true && mounted) {
+                              // Reset theme to light mode for next user
+                              final themeProvider = Provider.of<ThemeProvider>(
+                                context,
+                                listen: false,
+                              );
+                              await themeProvider.resetForLogout();
+
+                              // Clear chapter progress so next user starts fresh
+                              final learningProvider =
+                                  Provider.of<LearningProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                              await learningProvider.clearProgressOnLogout();
+
                               await FirebaseService.signOut();
                               if (mounted) {
                                 Navigator.of(context).pushNamedAndRemoveUntil(
@@ -497,6 +500,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
       ),
     );
+  }
+
+  /// Builds the avatar: local file (instant) → network URL → initials fallback.
+  Widget _buildAvatar(UserProvider userProvider) {
+    final initials = (userProvider.currentUser?.name.isNotEmpty == true)
+        ? userProvider.currentUser!.name[0].toUpperCase()
+        : '?';
+    final initialsWidget = Container(
+      color: AppTheme.accentGreen,
+      child: Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            fontSize: 50,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.white,
+          ),
+        ),
+      ),
+    );
+
+    // 1) Show local file immediately while upload is in progress
+    final localPath = userProvider.localProfileImagePath;
+    if (localPath != null) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => initialsWidget,
+      );
+    }
+
+    // 2) Show remote URL (cached by network image cache / CDN)
+    final remoteUrl = userProvider.currentUser?.profileImageUrl;
+    if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      return Image.network(
+        remoteUrl,
+        fit: BoxFit.cover,
+        cacheWidth: 300,
+        cacheHeight: 300,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            color: AppTheme.accentGreen,
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (_, __, ___) => initialsWidget,
+      );
+    }
+
+    // 3) No image — show initials
+    return initialsWidget;
   }
 
   Widget _buildStatCard(

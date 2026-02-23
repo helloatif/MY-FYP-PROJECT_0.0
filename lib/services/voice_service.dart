@@ -110,7 +110,9 @@ class VoiceService {
       case 'urdu':
         return 'ur-PK';
       case 'punjabi':
-        return 'pa-IN';
+        // Shahmukhi Punjabi uses same script as Urdu; pa-IN is Gurmukhi
+        // which is unavailable on most devices, so use Urdu TTS instead
+        return 'ur-PK';
       case 'english':
         return 'en-US';
       default:
@@ -124,7 +126,8 @@ class VoiceService {
       case 'urdu':
         return 'ur_PK';
       case 'punjabi':
-        return 'pa_IN';
+        // Use Urdu locale for Shahmukhi Punjabi speech recognition
+        return 'ur_PK';
       case 'english':
         return 'en_US';
       default:

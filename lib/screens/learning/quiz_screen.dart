@@ -148,6 +148,47 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       }
     }
 
+    // Add sentence-based questions
+    final wordsWithSentences = chapterVocab.where((w) => w.hasSentence).toList()
+      ..shuffle();
+    for (int i = 0; i < wordsWithSentences.length.clamp(0, 5); i++) {
+      final word = wordsWithSentences[i];
+      if (i % 2 == 0) {
+        // Sentence translation MCQ
+        final wrongSentences = wordsWithSentences
+            .where((w) => w.exampleEnglish != word.exampleEnglish)
+            .take(3)
+            .map((w) => w.exampleEnglish!)
+            .toList();
+        if (wrongSentences.length >= 2) {
+          questions.add(
+            EnhancedQuizQuestion(
+              id: 'sq_$i',
+              question:
+                  'What does this sentence mean?\n"${word.exampleSentence}"',
+              options: [word.exampleEnglish!, ...wrongSentences]..shuffle(),
+              correctAnswer: word.exampleEnglish!,
+              questionType: QuizType.comprehension,
+              answerType: AnswerType.multipleChoice,
+            ),
+          );
+        }
+      } else {
+        // Write the sentence
+        questions.add(
+          EnhancedQuizQuestion(
+            id: 'sq_$i',
+            question: 'Translate to Urdu:\n"${word.exampleEnglish}"',
+            correctAnswer: word.exampleSentence!,
+            questionType: QuizType.comprehension,
+            answerType: AnswerType.freeText,
+            explanation: 'Answer: ${word.exampleSentence}',
+          ),
+        );
+      }
+    }
+    questions.shuffle();
+
     return questions.isEmpty ? _getFallbackQuestions('urdu') : questions;
   }
 
@@ -207,6 +248,47 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         );
       }
     }
+
+    // Add sentence-based questions
+    final wordsWithSentences = chapterVocab.where((w) => w.hasSentence).toList()
+      ..shuffle();
+    for (int i = 0; i < wordsWithSentences.length.clamp(0, 5); i++) {
+      final word = wordsWithSentences[i];
+      if (i % 2 == 0) {
+        // Sentence translation MCQ
+        final wrongSentences = wordsWithSentences
+            .where((w) => w.exampleEnglish != word.exampleEnglish)
+            .take(3)
+            .map((w) => w.exampleEnglish!)
+            .toList();
+        if (wrongSentences.length >= 2) {
+          questions.add(
+            EnhancedQuizQuestion(
+              id: 'sq_$i',
+              question:
+                  'What does this sentence mean?\n"${word.exampleSentence}"',
+              options: [word.exampleEnglish!, ...wrongSentences]..shuffle(),
+              correctAnswer: word.exampleEnglish!,
+              questionType: QuizType.comprehension,
+              answerType: AnswerType.multipleChoice,
+            ),
+          );
+        }
+      } else {
+        // Write the sentence
+        questions.add(
+          EnhancedQuizQuestion(
+            id: 'sq_$i',
+            question: 'Translate to Punjabi:\n"${word.exampleEnglish}"',
+            correctAnswer: word.exampleSentence!,
+            questionType: QuizType.comprehension,
+            answerType: AnswerType.freeText,
+            explanation: 'Answer: ${word.exampleSentence}',
+          ),
+        );
+      }
+    }
+    questions.shuffle();
 
     return questions.isEmpty ? _getFallbackQuestions('punjabi') : questions;
   }
@@ -347,12 +429,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           );
         }
       }
-
-      // Add points to gamification
-      Provider.of<GamificationProvider>(
-        context,
-        listen: false,
-      ).addPoints(_lastScoreResult!.score ~/ 10);
     } catch (e) {
       // Fallback if API fails
       if (selectedAnswer == currentQuestion.correctAnswer) {
@@ -386,148 +462,278 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   void _showCompletionDialog() {
     final percentage = ((_score / _questions.length) * 100).toInt();
+
+    // Calculate XP based on accuracy: Max 10 XP scaled by correctness (e.g. 80% → 8 XP)
+    int earnedXP = percentage ~/ 10;
+    if (earnedXP > 10) earnedXP = 10;
+    if (earnedXP < 0) earnedXP = 0;
+
+    debugPrint(
+      '📊 Quiz completed: $_score/${_questions.length} correct ($percentage%) → $earnedXP XP',
+    );
+
     Provider.of<GamificationProvider>(
       context,
       listen: false,
-    ).addPoints(percentage);
+    ).addPoints(earnedXP);
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.elasticOut,
-        builder: (context, value, child) {
-          return Transform.scale(scale: value, child: child);
-        },
-        child: AlertDialog(
-          title: Row(
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.easeInOut,
-                builder: (context, value, child) {
-                  return Transform.rotate(
-                    angle: value * 6.28, // Full rotation
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  _totalPoints >= _questions.length * 80
-                      ? Icons.emoji_events
-                      : Icons.celebration,
-                  color: _totalPoints >= _questions.length * 80
-                      ? Colors.amber
-                      : AppTheme.primaryGreen,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _totalPoints >= _questions.length * 80
-                    ? 'Excellent!'
-                    : 'Quiz Complete!',
-              ),
-            ],
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutBack,
+        builder: (context, value, child) =>
+            Transform.scale(scale: value, child: child),
+        child: Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 16),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.easeOutBack,
-                builder: (context, value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: percentage >= 80
-                          ? AppTheme.primaryGreen
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  percentage >= 80
+                      ? AppTheme.primaryGreen.withOpacity(0.08)
+                      : Colors.orange.withOpacity(0.08),
+                  Colors.white,
+                ],
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated trophy/star
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 800),
+                  curve: Curves.elasticOut,
+                  builder: (context, value, child) =>
+                      Transform.scale(scale: value, child: child),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: percentage >= 80
+                            ? [AppTheme.primaryGreen, const Color(0xFF34A853)]
+                            : percentage >= 60
+                            ? [AppTheme.orange, Colors.amber]
+                            : [Colors.red.shade400, Colors.orange],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              (percentage >= 80
+                                      ? AppTheme.primaryGreen
+                                      : AppTheme.orange)
+                                  .withOpacity(0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      percentage >= 80
+                          ? Icons.emoji_events
                           : percentage >= 60
-                          ? Colors.amber
-                          : Colors.orange,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '$percentage%',
-                            style: const TextStyle(
-                              color: AppTheme.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
+                          ? Icons.stars
+                          : Icons.school,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  percentage >= 90
+                      ? 'Outstanding!'
+                      : percentage >= 80
+                      ? 'Great Job!'
+                      : percentage >= 60
+                      ? 'Good Effort!'
+                      : 'Keep Practicing!',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _getFeedbackMessage(percentage),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                // Score ring
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: percentage / 100),
+                  duration: const Duration(milliseconds: 1200),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => SizedBox(
+                    width: 100,
+                    height: 100,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 100,
+                          height: 100,
+                          child: CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 8,
+                            backgroundColor: Colors.grey.shade200,
+                            valueColor: AlwaysStoppedAnimation(
+                              percentage >= 80
+                                  ? AppTheme.primaryGreen
+                                  : percentage >= 60
+                                  ? Colors.amber
+                                  : Colors.orange,
                             ),
                           ),
-                          Text(
-                            _getGradeLabel(percentage),
-                            style: const TextStyle(
-                              color: AppTheme.white,
-                              fontSize: 12,
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${(value * 100).toInt()}%',
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
+                            Text(
+                              _getGradeLabel(percentage),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Stats row
+                Row(
+                  children: [
+                    _buildCompletionStat(
+                      Icons.check_circle,
+                      '$_score/${_questions.length}',
+                      'Correct',
+                      Colors.green,
+                    ),
+                    _buildCompletionStat(
+                      Icons.star,
+                      '$_totalPoints',
+                      'Points',
+                      AppTheme.orange,
+                    ),
+                    _buildCompletionStat(
+                      Icons.bolt,
+                      '+$earnedXP',
+                      'XP',
+                      AppTheme.purple,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          setState(() {
+                            _currentQuestionIndex = 0;
+                            _score = 0;
+                            _totalPoints = 0;
+                            _showResult = false;
+                            _lastScoreResult = null;
+                          });
+                        },
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                        ],
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
                       ),
                     ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'You answered $_score/${_questions.length} questions correctly',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Total Points: $_totalPoints',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryGreen,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).pop();
+                        },
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('Done'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryGreen,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _getFeedbackMessage(percentage),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontStyle: FontStyle.italic,
-                  fontSize: 13,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          actions: [
-            TextButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _currentQuestionIndex = 0;
-                  _score = 0;
-                  _totalPoints = 0;
-                  _showResult = false;
-                  _lastScoreResult = null;
-                });
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              },
-              icon: const Icon(Icons.check),
-              label: const Text('Done'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryGreen,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompletionStat(
+    IconData icon,
+    String value,
+    String label,
+    Color color,
+  ) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+          ),
+        ],
       ),
     );
   }
@@ -552,223 +758,261 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
     final language = userProvider.currentUser?.selectedLanguage ?? 'urdu';
-    final languageLabel = language == 'urdu' ? 'Urdu' : 'Punjabi';
     final currentQuestion = _questions[_currentQuestionIndex];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('$languageLabel Quiz'),
-        backgroundColor: AppTheme.primaryGreen,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => _showExitConfirmation(),
-        ),
-        actions: [
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              margin: const EdgeInsets.only(right: 16),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.amber, size: 18),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$_totalPoints pts',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Progress Bar
-          Container(
-            color: AppTheme.primaryGreen,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Question ${_currentQuestionIndex + 1}/${_questions.length}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        currentQuestion.questionType.name.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: (_currentQuestionIndex + 1) / _questions.length,
-                    backgroundColor: Colors.white.withOpacity(0.3),
-                    valueColor: const AlwaysStoppedAnimation(Colors.white),
-                    minHeight: 8,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Question Content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Premium top bar
+            Container(
+              padding: const EdgeInsets.fromLTRB(8, 4, 16, 12),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Question Card
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryGreen.withOpacity(0.15),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.black54),
+                        onPressed: () => _showExitConfirmation(),
+                      ),
+                      Expanded(
+                        child: Container(
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.easeOutCubic,
+                            width:
+                                MediaQuery.of(context).size.width *
+                                0.6 *
+                                ((_currentQuestionIndex + 1) /
+                                    _questions.length),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  AppTheme.primaryGreen,
+                                  AppTheme.lightGreen,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(
-                          _getQuestionIcon(currentQuestion.questionType),
-                          color: AppTheme.primaryGreen,
-                          size: 32,
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          currentQuestion.question,
+                        decoration: BoxDecoration(
+                          color: AppTheme.orange.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star,
+                              color: AppTheme.orange,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '$_totalPoints',
+                              style: const TextStyle(
+                                color: AppTheme.orange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '  Question ${_currentQuestionIndex + 1} of ${_questions.length}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.purple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          currentQuestion.questionType.name.toUpperCase(),
                           style: const TextStyle(
-                            fontSize: 20,
+                            color: AppTheme.purple,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                        if (currentQuestion.wordToTranslate != null) ...[
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              currentQuestion.wordToTranslate!,
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryGreen,
-                                fontFamily: 'NotoNastaliqUrdu',
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
-                  const SizedBox(height: 24),
-
-                  // Answer Section based on type
-                  _buildAnswerSection(currentQuestion),
-
-                  // Feedback Section
-                  if (_showResult && _lastScoreResult != null) ...[
-                    const SizedBox(height: 24),
-                    _buildFeedbackCard(),
-                  ],
                 ],
               ),
             ),
-          ),
 
-          // Bottom Button for text input
-          if (currentQuestion.answerType == AnswerType.freeText ||
-              currentQuestion.answerType == AnswerType.fillInBlank)
-            SafeArea(
-              child: Container(
+            // Question Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Question Card
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primaryGreen.withOpacity(0.1),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryGreen.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _getQuestionIcon(currentQuestion.questionType),
+                              color: AppTheme.primaryGreen,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            currentQuestion.question,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (currentQuestion.wordToTranslate != null) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    AppTheme.primaryGreen.withOpacity(0.08),
+                                    AppTheme.primaryGreen.withOpacity(0.04),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppTheme.primaryGreen.withOpacity(0.2),
+                                ),
+                              ),
+                              child: Text(
+                                currentQuestion.wordToTranslate!,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryGreen,
+                                  fontFamily: 'NotoNastaliqUrdu',
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildAnswerSection(currentQuestion),
+                    if (_showResult && _lastScoreResult != null) ...[
+                      const SizedBox(height: 24),
+                      _buildFeedbackCard(),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Bottom Button for text input
+            if (currentQuestion.answerType == AnswerType.freeText ||
+                currentQuestion.answerType == AnswerType.fillInBlank)
+              Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withOpacity(0.06),
                       blurRadius: 10,
-                      offset: const Offset(0, -2),
+                      offset: const Offset(0, -4),
                     ),
                   ],
                 ),
-                child: ElevatedButton(
-                  onPressed:
-                      _showResult ||
-                          _isCheckingAnswer ||
-                          _answerController.text.isEmpty
-                      ? null
-                      : () => _answerQuestion(_answerController.text),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed:
+                        _showResult ||
+                            _isCheckingAnswer ||
+                            _answerController.text.isEmpty
+                        ? null
+                        : () => _answerQuestion(_answerController.text),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryGreen,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                      disabledBackgroundColor: Colors.grey.shade300,
                     ),
-                    disabledBackgroundColor: Colors.grey.shade300,
+                    child: _isCheckingAnswer
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Check Answer',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
-                  child: _isCheckingAnswer
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Check Answer',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

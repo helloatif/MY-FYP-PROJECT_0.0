@@ -24,7 +24,7 @@ class ChapterModel {
     required this.language,
     required this.icon,
     required this.color,
-    this.lessonCount = 5,
+    this.lessonCount = 4,
     this.topics = const [],
     this.isLocked = true,
     this.progress = 0.0,

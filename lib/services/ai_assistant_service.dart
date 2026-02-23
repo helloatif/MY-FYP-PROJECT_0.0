@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../config/api_keys.dart';
 
 /// AI Assistant for language learning help
 class AIAssistantService {
   static const String _apiUrl =
       'https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill';
-  static const String _apiToken = 'YOUR_HUGGING_FACE_API_TOKEN';
+  static const String _apiToken = ApiKeys.huggingFaceToken;
 
   static final List<Map<String, String>> _conversationHistory = [];
 

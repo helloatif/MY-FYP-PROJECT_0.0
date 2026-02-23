@@ -20,7 +20,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final currentUserEmail = userProvider.currentUser?.email ?? '';
 
     return Scaffold(
-      backgroundColor: AppTheme.lightGray,
       body: Column(
         children: [
           Container(
@@ -102,17 +101,41 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         const SizedBox(height: 16),
                         Text(
                           'Failed to load leaderboard',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ],
                     ),
                   );
                 }
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                // Fetch all docs, filter and sort client-side
+                List<QueryDocumentSnapshot> users = snapshot.data!.docs;
+
+                // Client-side language filter for urdu/punjabi tabs
+                if (_selectedLanguageFilter != 'all') {
+                  users = users.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final lang = (data['selectedLanguage'] ?? 'urdu')
+                        .toString()
+                        .toLowerCase();
+                    return lang == _selectedLanguageFilter;
+                  }).toList();
+                }
+
+                // Sort by totalXP descending, fallback to totalPoints
+                users.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+                  final aXP =
+                      ((aData['totalXP'] ?? aData['totalPoints'] ?? 0) as num)
+                          .toInt();
+                  final bXP =
+                      ((bData['totalXP'] ?? bData['totalPoints'] ?? 0) as num)
+                          .toInt();
+                  return bXP.compareTo(aXP);
+                });
+
+                if (users.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -127,35 +150,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           _selectedLanguageFilter == 'all'
                               ? 'No users yet'
                               : 'No ${_selectedLanguageFilter == 'urdu' ? 'Urdu' : 'Punjabi'} learners yet',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Be the first to start learning!',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[500],
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   );
                 }
-
-                // Filter and sort users
-                List<QueryDocumentSnapshot> users = snapshot.data!.docs;
-
-                // Sort by totalXP (in case Firestore index is not available)
-                users.sort((a, b) {
-                  final aXP =
-                      (a.data() as Map<String, dynamic>)['totalXP'] ?? 0;
-                  final bXP =
-                      (b.data() as Map<String, dynamic>)['totalXP'] ?? 0;
-                  return bXP.compareTo(aXP);
-                });
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
@@ -164,18 +169,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     final userData =
                         users[index].data() as Map<String, dynamic>;
                     final userEmail = userData['email'] ?? '';
+                    final emailPrefix =
+                        (userData['email'] as String?)?.split('@')[0] ?? 'User';
                     final userName =
-                        userData['displayName'] ??
-                        userData['email']?.split('@')[0] ??
-                        'User';
-                    final xp = userData['totalXP'] ?? 0;
+                        (userData['displayName'] as String?)?.isNotEmpty == true
+                        ? userData['displayName'] as String
+                        : emailPrefix;
+                    final xp =
+                        ((userData['totalXP'] ?? userData['totalPoints'] ?? 0)
+                                as num)
+                            .toInt();
                     final level = _calculateLevel(xp);
                     final isCurrentUser = userEmail == currentUserEmail;
-                    final userLang = userData['selectedLanguage'] ?? 'urdu';
+                    final userLang = (userData['selectedLanguage'] ?? 'urdu')
+                        .toString()
+                        .toLowerCase();
 
                     return _LeaderboardCard(
                       rank: index + 1,
-                      name: isCurrentUser ? 'You' : userName,
+                      name: userName,
                       xp: xp,
                       level: level,
                       isCurrentUser: isCurrentUser,
@@ -218,22 +230,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Stream<QuerySnapshot> _getLeaderboardStream() {
-    final collection = FirebaseFirestore.instance.collection('users');
-
-    if (_selectedLanguageFilter == 'all') {
-      return collection
-          .orderBy('totalXP', descending: true)
-          .limit(50)
-          .snapshots();
-    } else {
-      // Filter by selected language
-      // Note: This requires a composite index in Firestore
-      // If not available, we fetch all and filter client-side
-      return collection
-          .where('selectedLanguage', isEqualTo: _selectedLanguageFilter)
-          .limit(100)
-          .snapshots();
-    }
+    // Fetch all users without orderBy to avoid Firestore index requirements.
+    // Filtering and sorting are done fully client-side so every registered
+    // user is visible regardless of whether their document has all fields set.
+    return FirebaseFirestore.instance
+        .collection('users')
+        .limit(500)
+        .snapshots();
   }
 
   int _calculateLevel(int xp) {
@@ -336,7 +339,7 @@ class _LeaderboardCard extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             color: isCurrentUser
                                 ? AppTheme.primaryGreen
-                                : Colors.black,
+                                : Theme.of(context).colorScheme.onSurface,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),

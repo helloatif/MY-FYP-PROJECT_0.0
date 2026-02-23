@@ -26,19 +26,13 @@ const String _languageSelectedKey = 'language_selected_flag';
 // Global variable to store initial theme preference
 bool _initialDarkMode = false;
 
+// Global variable to store initial userId (used by ThemeProvider at startup)
+String _initialUserId = '';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load theme preference BEFORE app starts (prevents flicker)
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    _initialDarkMode = prefs.getBool('isDarkMode') ?? false;
-    print('✓ Theme preference loaded: isDarkMode=$_initialDarkMode');
-  } catch (e) {
-    print('⚠ Could not load theme preference: $e');
-  }
-
-  // Initialize Firebase and WAIT for it to complete
+  // Initialize Firebase FIRST so we can read the current user UID
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -52,6 +46,18 @@ void main() async {
     print('✓ Firebase initialized successfully - users will stay logged in');
   } catch (e) {
     print('✗ Firebase initialization error: $e');
+  }
+
+  // Load theme preference AFTER Firebase so we can use the user-specific key
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    _initialUserId = uid;
+    final key = uid.isNotEmpty ? 'isDarkMode_$uid' : 'isDarkMode';
+    _initialDarkMode = prefs.getBool(key) ?? false;
+    print('✓ Theme preference loaded (key=$key): isDarkMode=$_initialDarkMode');
+  } catch (e) {
+    print('⚠ Could not load theme preference: $e');
   }
 
   // Start app after Firebase is ready
@@ -134,7 +140,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LearningProvider()),
         ChangeNotifierProvider(create: (_) => GamificationProvider()),
         ChangeNotifierProvider(
-          create: (_) => ThemeProvider(initialDarkMode: _initialDarkMode),
+          create: (_) => ThemeProvider(
+            initialDarkMode: _initialDarkMode,
+            userId: _initialUserId,
+          ),
         ),
         ChangeNotifierProvider(create: (_) => AdaptiveQuizService()),
         ChangeNotifierProvider(create: (_) => AdaptiveLearningProvider()),
@@ -240,6 +249,10 @@ class _AuthGateState extends State<_AuthGate> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && user.emailVerified) {
+      // Load user-specific theme FIRST so dark mode switches instantly
+      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      await themeProvider.loadForUser(user.uid);
+
       // Load user provider data
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       await userProvider.loadUserFromFirebase();
@@ -250,6 +263,13 @@ class _AuthGateState extends State<_AuthGate> {
         listen: false,
       );
       await gamificationProvider.loadFromFirestore();
+
+      // Load learning progress data
+      final learningProvider = Provider.of<LearningProvider>(
+        context,
+        listen: false,
+      );
+      await learningProvider.loadProgressFromFirestore();
 
       debugPrint('✓ Providers loaded on app start');
     }

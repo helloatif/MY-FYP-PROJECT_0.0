@@ -7,6 +7,7 @@ import '../../themes/app_theme.dart';
 import '../../services/firebase_service.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
+import '../../providers/learning_provider.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key});
@@ -103,6 +104,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 listen: false,
               );
               await gamificationProvider.loadFromFirestore();
+
+              // Load learning progress (chapter completions, quiz scores)
+              final learningProvider = Provider.of<LearningProvider>(
+                context,
+                listen: false,
+              );
+              await learningProvider.loadProgressFromFirestore();
 
               final doc = await FirebaseFirestore.instance
                   .collection('users')
@@ -258,7 +266,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: AppTheme.lightGray,
       appBar: AppBar(
         title: const Text('Verify Your Email'),
         actions: [

@@ -53,3 +53,8 @@ __pycache__/
 venv/
 ENV/
 .venv
+
+ml_model/trained_model_v3_2500/
+
+# API Keys (secret)
+lib/config/api_keys.dart

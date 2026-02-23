@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import '../config/api_keys.dart';
 
 /// ML-powered service using the deployed XLM-RoBERTa model on Hugging Face
 /// Model: RAFAY-484/Urdu-Punjabi-V2 (trained on 996 custom words with lessons)
@@ -12,8 +13,8 @@ class MLVocabularyService {
   static const String _hfApiUrl =
       'https://api-inference.huggingface.co/models/$_hfModelId';
 
-  // Your Hugging Face API token
-  static const String _hfToken = 'YOUR_HUGGINGFACE_API_KEY_HERE';
+  // API token loaded from config
+  static const String _hfToken = ApiKeys.huggingFaceToken;
 
   // Cached vocabulary data (loaded from assets)
   static List<Map<String, dynamic>>? _vocabularyCache;
@@ -2251,4 +2252,3 @@ class GrammarCheckResult {
     this.confidence = 0.5,
   });
 }
-

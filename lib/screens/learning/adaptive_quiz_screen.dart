@@ -147,8 +147,15 @@ class _AdaptiveQuizScreenState extends State<AdaptiveQuizScreen>
       _missedWords,
     );
 
-    // Award XP based on performance
-    gamification.addPoints(percentage);
+    // Calculate XP based on accuracy: Max 10 XP scaled by correctness
+    // Example: 15/15 = 100% = 10 XP, 10/15 = 66.7% = 6.67 ≈ 7 XP
+    final earnedXP = ((_score / _questions.length) * 10).round();
+
+    debugPrint(
+      '📊 Adaptive quiz completed: $_score/${_questions.length} correct ($percentage%) → $earnedXP XP',
+    );
+
+    gamification.addPoints(earnedXP);
     gamification.updateDailyStreak();
 
     showDialog(

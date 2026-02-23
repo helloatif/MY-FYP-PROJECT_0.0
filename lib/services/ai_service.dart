@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../config/api_keys.dart';
 
 class AIService {
   // ============================================
@@ -9,9 +10,8 @@ class AIService {
 
   // Option 1: Hugging Face Inference API (RECOMMENDED)
   // Replace with your model: https://huggingface.co/YOUR_USERNAME/urdu-punjabi-classifier
-  static const String _huggingFaceModel =
-      'YOUR_USERNAME/urdu-punjabi-classifier';
-  static const String _huggingFaceToken = '[YOUR_TOKEN_HERE]';
+  static const String _huggingFaceModel = 'RAFAY-484/Urdu-Punjabi-V2';
+  static const String _huggingFaceToken = ApiKeys.huggingFaceToken;
 
   // Option 2: Hugging Face Space (if you deployed to Spaces)
   // Replace with your Space URL

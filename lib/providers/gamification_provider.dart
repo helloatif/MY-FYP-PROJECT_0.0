@@ -277,7 +277,7 @@ class GamificationProvider extends ChangeNotifier {
 
   void completeLesson() {
     _totalLessonsCompleted++;
-    addPoints(20);
+    // Note: Points are added separately in lesson completion based on accuracy
 
     if (_totalLessonsCompleted == 10) {
       _unlockBadge(

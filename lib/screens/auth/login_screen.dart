@@ -7,6 +7,7 @@ import '../../services/firebase_service.dart';
 import '../../localization/app_strings.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
+import '../../providers/learning_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -150,7 +151,14 @@ class _LoginScreenState extends State<LoginScreen>
               context,
               listen: false,
             );
-            gamificationProvider.loadFromFirestore();
+            await gamificationProvider.loadFromFirestore();
+
+            // Load learning progress (chapter completions, quiz scores)
+            final learningProvider = Provider.of<LearningProvider>(
+              context,
+              listen: false,
+            );
+            await learningProvider.loadProgressFromFirestore();
 
             // First check SharedPreferences (fastest)
             final prefs = await SharedPreferences.getInstance();
@@ -279,7 +287,6 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.lightGray,
       resizeToAvoidBottomInset: true, // Fix keyboard overflow
       body: SafeArea(
         child: SingleChildScrollView(

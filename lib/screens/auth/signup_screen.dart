@@ -171,7 +171,6 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.lightGray,
       appBar: AppBar(
         title: const Text('Sign Up'),
         leading: IconButton(
@@ -287,7 +286,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         )
                       : const Text(
-                          'اکاؤنٹ بنائیں',
+                          'Create Account',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -301,7 +300,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'پہلے سے اکاؤنٹ ہے؟ ',
+                      'Already have an account? ',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     TextButton(
@@ -309,7 +308,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         Navigator.of(context).pop();
                       },
                       child: const Text(
-                        'داخل ہوں',
+                        'Log In',
                         style: TextStyle(
                           color: AppTheme.primaryGreen,
                           fontWeight: FontWeight.bold,
