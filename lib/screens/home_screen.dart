@@ -67,8 +67,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: Column(
         children: [
           // Premium top bar
@@ -80,10 +83,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               bottom: 16,
             ),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDark ? AppTheme.darkSurface : Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -102,16 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'LinguaLearn',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A2E),
-                    ),
-                  ),
-                ),
+                const Spacer(),
                 // Streak badge
                 Consumer<GamificationProvider>(
                   builder: (context, g, _) => AnimatedBuilder(
@@ -124,10 +118,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            Colors.orange.withOpacity(
-                              0.1 + _streakPulse.value * 0.08,
+                            Colors.orange.withValues(
+                              alpha: 0.1 + _streakPulse.value * 0.08,
                             ),
-                            Colors.deepOrange.withOpacity(0.08),
+                            Colors.deepOrange.withValues(alpha: 0.08),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(20),
@@ -168,7 +162,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       gradient: LinearGradient(
                         colors: [
                           AppTheme.purple.withOpacity(0.1),
-                          AppTheme.purple.withOpacity(0.05),
+                          AppTheme.purple.withValues(alpha: 0.1),
+                          AppTheme.purple.withValues(alpha: 0.05),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(20),
@@ -230,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, -2),
             ),
@@ -306,7 +301,7 @@ class _NavItem extends StatelessWidget {
           vertical: 8,
         ),
         decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.12) : Colors.transparent,
+          color: isActive ? color.withValues(alpha: 0.12) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(

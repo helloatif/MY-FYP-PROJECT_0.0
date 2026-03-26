@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ml_vocabulary_service.dart';
 import '../data/vocabulary_data.dart';
 
 /// Chapter model for organizing learning content
@@ -31,22 +32,90 @@ class ChapterModel {
     this.completedLessons = 0,
   });
 
-  /// Get vocabulary for this chapter
-  List<LessonVocabulary> getLessons() {
-    if (language == 'urdu') {
-      return VocabularyData.urduLessons[id] ?? [];
-    } else {
-      return VocabularyData.punjabiLessons[id] ?? [];
+  /// Legacy sync API disabled in ML-only mode.
+  @Deprecated('Use getLessonsFromMl() for XLM-RoBERTa-only content.')
+  List<LessonVocabulary> getLessons() => const [];
+
+  /// Legacy sync API disabled in ML-only mode.
+  @Deprecated('Use getLessonFromMl() for XLM-RoBERTa-only content.')
+  LessonVocabulary? getLesson(int index) => null;
+
+  /// Get chapter lessons from XLM-RoBERTa only.
+  Future<List<LessonVocabulary>> getLessonsFromMl({
+    int wordsPerLesson = 25,
+  }) async {
+    final lessons = <LessonVocabulary>[];
+
+    for (int lessonIdx = 0; lessonIdx < lessonCount; lessonIdx++) {
+      final predictions = await MLVocabularyService.generateVocabularyWithML(
+        chapterId: id,
+        lessonIndex: lessonIdx,
+        language: language,
+        count: wordsPerLesson,
+      );
+
+      if (predictions.isEmpty) {
+        continue;
+      }
+
+      final words = predictions
+          .map(
+            (p) => VocabWord(
+              urdu: p.word,
+              english: p.translation,
+              pronunciation: p.pronunciation,
+              exampleSentence: p.example ?? p.word,
+              exampleEnglish: p.translation,
+            ),
+          )
+          .toList();
+
+      lessons.add(
+        LessonVocabulary(
+          lessonNumber: lessonIdx + 1,
+          title: 'ML Lesson ${lessonIdx + 1}',
+          titleEnglish: topics.length > lessonIdx
+              ? topics[lessonIdx]
+              : 'Lesson ${lessonIdx + 1}',
+          words: words,
+        ),
+      );
     }
+
+    return lessons;
   }
 
-  /// Get specific lesson
-  LessonVocabulary? getLesson(int index) {
-    final lessons = getLessons();
-    if (index < lessons.length) {
-      return lessons[index];
-    }
-    return null;
+  /// Get one lesson from XLM-RoBERTa only.
+  Future<LessonVocabulary?> getLessonFromMl(int index) async {
+    if (index < 0 || index >= lessonCount) return null;
+
+    final predictions = await MLVocabularyService.generateVocabularyWithML(
+      chapterId: id,
+      lessonIndex: index,
+      language: language,
+      count: 25,
+    );
+
+    if (predictions.isEmpty) return null;
+
+    return LessonVocabulary(
+      lessonNumber: index + 1,
+      title: 'ML Lesson ${index + 1}',
+      titleEnglish: topics.length > index
+          ? topics[index]
+          : 'Lesson ${index + 1}',
+      words: predictions
+          .map(
+            (p) => VocabWord(
+              urdu: p.word,
+              english: p.translation,
+              pronunciation: p.pronunciation,
+              exampleSentence: p.example ?? p.word,
+              exampleEnglish: p.translation,
+            ),
+          )
+          .toList(),
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -177,6 +246,66 @@ class ChapterService {
         topics: ['Festivals', 'Family', 'Traditions', 'Celebrations'],
         isLocked: true,
       ),
+      ChapterModel(
+        id: 'urdu_ch11',
+        title: 'جذبات و احساسات',
+        titleEnglish: 'Emotions & Feelings',
+        description: 'Learn how to understand and express emotions naturally',
+        language: 'urdu',
+        icon: Icons.emoji_emotions,
+        color: Colors.deepOrange,
+        topics: [
+          'Basic Emotions',
+          'Intensity',
+          'Social Feelings',
+          'Expression',
+        ],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'urdu_ch12',
+        title: 'کھیل کود',
+        titleEnglish: 'Sports & Games',
+        description: 'Sports vocabulary, actions, and match expressions',
+        language: 'urdu',
+        icon: Icons.sports_soccer,
+        color: Colors.lightBlue,
+        topics: ['Sports Names', 'Actions', 'Equipment', 'Match Terms'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'urdu_ch13',
+        title: 'اسلامی اصطلاحات',
+        titleEnglish: 'Islamic Terms & Months',
+        description: 'Ramadan, Eid, worship terms, and Islamic calendar months',
+        language: 'urdu',
+        icon: Icons.mosque,
+        color: Colors.green,
+        topics: ['Worship', 'Ramadan', 'Eid', 'Islamic Months'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'urdu_ch14',
+        title: 'فطرت و ماحول',
+        titleEnglish: 'Nature & Environment',
+        description: 'Weather, nature, and environmental awareness vocabulary',
+        language: 'urdu',
+        icon: Icons.eco,
+        color: Colors.teal,
+        topics: ['Weather', 'Nature', 'Environmental Issues', 'Protection'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'urdu_ch15',
+        title: 'گھر اور فرنیچر',
+        titleEnglish: 'Home & Furniture',
+        description: 'Rooms, furniture, and daily household expressions',
+        language: 'urdu',
+        icon: Icons.chair,
+        color: Colors.deepPurple,
+        topics: ['Rooms', 'Furniture', 'Home Items', 'Household Phrases'],
+        isLocked: true,
+      ),
     ];
   }
 
@@ -291,6 +420,66 @@ class ChapterService {
         icon: Icons.celebration,
         color: Colors.pink,
         topics: ['Festivals', 'Family', 'Traditions', 'Celebrations'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'punjabi_ch11',
+        title: 'جذبات تے احساسات',
+        titleEnglish: 'Emotions & Feelings',
+        description: 'Learn to identify and express emotions in Punjabi',
+        language: 'punjabi',
+        icon: Icons.emoji_emotions,
+        color: Colors.deepOrange,
+        topics: [
+          'Basic Emotions',
+          'Intensity',
+          'Social Feelings',
+          'Expression',
+        ],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'punjabi_ch12',
+        title: 'کھیڈاں تے کھیل',
+        titleEnglish: 'Sports & Games',
+        description: 'Punjabi sports vocabulary, actions, and match terms',
+        language: 'punjabi',
+        icon: Icons.sports_soccer,
+        color: Colors.lightBlue,
+        topics: ['Sports Names', 'Actions', 'Equipment', 'Match Terms'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'punjabi_ch13',
+        title: 'اسلامی اصطلاحات',
+        titleEnglish: 'Islamic Terms & Months',
+        description: 'Ramadan, Eid, and Islamic months in Punjabi context',
+        language: 'punjabi',
+        icon: Icons.mosque,
+        color: Colors.green,
+        topics: ['Worship', 'Ramadan', 'Eid', 'Islamic Months'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'punjabi_ch14',
+        title: 'فطرت تے ماحول',
+        titleEnglish: 'Nature & Environment',
+        description: 'Weather and environmental vocabulary in Punjabi',
+        language: 'punjabi',
+        icon: Icons.eco,
+        color: Colors.teal,
+        topics: ['Weather', 'Nature', 'Environmental Issues', 'Protection'],
+        isLocked: true,
+      ),
+      ChapterModel(
+        id: 'punjabi_ch15',
+        title: 'گھر تے فرنیچر',
+        titleEnglish: 'Home & Furniture',
+        description: 'Rooms, furniture, and household conversation in Punjabi',
+        language: 'punjabi',
+        icon: Icons.chair,
+        color: Colors.deepPurple,
+        topics: ['Rooms', 'Furniture', 'Home Items', 'Household Phrases'],
         isLocked: true,
       ),
     ];

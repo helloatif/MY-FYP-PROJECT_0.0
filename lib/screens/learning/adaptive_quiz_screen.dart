@@ -202,6 +202,7 @@ class _AdaptiveQuizScreenState extends State<AdaptiveQuizScreen>
             height: 100,
             decoration: BoxDecoration(
               color: color.withOpacity(0.15),
+                            color: color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 50, color: color),
@@ -398,6 +399,7 @@ class _AdaptiveQuizScreenState extends State<AdaptiveQuizScreen>
                             boxShadow: [
                               BoxShadow(
                                 color: AppTheme.primaryGreen.withOpacity(0.1),
+                                                                color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                                 blurRadius: 20,
                                 offset: const Offset(0, 8),
                               ),
@@ -450,15 +452,18 @@ class _AdaptiveQuizScreenState extends State<AdaptiveQuizScreen>
                           if (_showResult && isSelected) {
                             if (isCorrect) {
                               cardColor = AppTheme.primaryGreen.withOpacity(
+                                                              cardColor = AppTheme.primaryGreen.withValues(alpha:
                                 0.1,
                               );
                               borderColor = AppTheme.primaryGreen;
                             } else {
                               cardColor = AppTheme.red.withOpacity(0.1);
+                                                            cardColor = AppTheme.red.withValues(alpha: 0.1);
                               borderColor = AppTheme.red;
                             }
                           } else if (_showResult && isCorrect) {
                             cardColor = AppTheme.primaryGreen.withOpacity(0.1);
+                                                        cardColor = AppTheme.primaryGreen.withValues(alpha: 0.1);
                             borderColor = AppTheme.primaryGreen;
                           }
 

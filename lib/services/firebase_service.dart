@@ -136,14 +136,23 @@ class FirebaseService {
         throw Exception('email-not-verified');
       }
 
-      // Update Firestore (fire and forget)
+      // Ensure user document exists for leaderboard/profile visibility.
       _firestore
           .collection('users')
           .doc(user.uid)
-          .update({
+          .set({
+            'email': user.email ?? email,
+            'displayName': (user.displayName ?? '').trim().isNotEmpty
+                ? user.displayName
+                : (user.email ?? email).split('@')[0],
             'emailVerified': true,
             'lastLoginAt': FieldValue.serverTimestamp(),
-          })
+            'createdAt': FieldValue.serverTimestamp(),
+            'selectedLanguage': 'urdu',
+            'totalXP': 0,
+            'totalPoints': 0,
+            'currentLevel': 1,
+          }, SetOptions(merge: true))
           .catchError((e) => print('Firestore update error: $e'));
 
       print('✅ User signed in successfully: ${user.uid}');

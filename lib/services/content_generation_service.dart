@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'ml_vocabulary_service.dart';
 
 /// Service for generating learning content using AI
 class ContentGenerationService {
@@ -13,12 +14,58 @@ class ContentGenerationService {
     int count,
   ) async {
     try {
-      // For now, use pre-defined content
+      // First try ML-backed vocabulary source.
+      final chapterHint = _topicToChapterId(topic, language);
+      final mlWords = await MLVocabularyService.generateVocabularyWithML(
+        chapterId: chapterHint,
+        lessonIndex: 0,
+        language: language,
+        count: count,
+      );
+
+      if (mlWords.isNotEmpty) {
+        return mlWords
+            .map(
+              (w) => VocabularyWord(
+                word: w.word,
+                translation: w.translation,
+                pronunciation: w.pronunciation,
+                example: w.example ?? w.word,
+                exampleTranslation: w.translation,
+              ),
+            )
+            .toList();
+      }
+
       return _getOfflineVocabulary(topic, language, count);
     } catch (e) {
       debugPrint('Content Generation Error: $e');
       return _getOfflineVocabulary(topic, language, count);
     }
+  }
+
+  static String _topicToChapterId(String topic, String language) {
+    final normalized = topic.toLowerCase();
+    final prefix = language == 'urdu' ? 'urdu_' : 'punjabi_';
+
+    if (normalized.contains('emotion')) return '${prefix}ch11';
+    if (normalized.contains('sport')) return '${prefix}ch12';
+    if (normalized.contains('islam') ||
+        normalized.contains('ramazan') ||
+        normalized.contains('ramadan') ||
+        normalized.contains('eid')) {
+      return '${prefix}ch13';
+    }
+    if (normalized.contains('nature') || normalized.contains('environment')) {
+      return '${prefix}ch14';
+    }
+    if (normalized.contains('home') ||
+        normalized.contains('house') ||
+        normalized.contains('furniture') ||
+        normalized.contains('room')) {
+      return '${prefix}ch15';
+    }
+    return '${prefix}ch1';
   }
 
   /// Generate contextual sentences for practice

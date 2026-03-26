@@ -17,7 +17,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
-    final currentUserEmail = userProvider.currentUser?.email ?? '';
+    final currentUserId = userProvider.currentUser?.id ?? '';
 
     return Scaffold(
       body: Column(
@@ -168,7 +168,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   itemBuilder: (context, index) {
                     final userData =
                         users[index].data() as Map<String, dynamic>;
-                    final userEmail = userData['email'] ?? '';
+                    final userId = users[index].id;
                     final emailPrefix =
                         (userData['email'] as String?)?.split('@')[0] ?? 'User';
                     final userName =
@@ -180,7 +180,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                 as num)
                             .toInt();
                     final level = _calculateLevel(xp);
-                    final isCurrentUser = userEmail == currentUserEmail;
+                    final isCurrentUser = userId == currentUserId;
                     final userLang = (userData['selectedLanguage'] ?? 'urdu')
                         .toString()
                         .toLowerCase();

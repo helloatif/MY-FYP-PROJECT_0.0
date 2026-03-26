@@ -115,10 +115,25 @@ class UserProvider extends ChangeNotifier {
           notifyListeners();
         } else {
           // User doc doesn't exist, create basic user object
+          final fallbackName = firebaseUser.email?.split('@')[0] ?? 'User';
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(firebaseUser.uid)
+              .set({
+                'email': firebaseUser.email ?? '',
+                'displayName': fallbackName,
+                'selectedLanguage': 'urdu',
+                'totalXP': 0,
+                'totalPoints': 0,
+                'currentLevel': 1,
+                'createdAt': FieldValue.serverTimestamp(),
+                'lastLoginAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+
           _currentUser = User(
             id: firebaseUser.uid,
             email: firebaseUser.email ?? '',
-            name: firebaseUser.email?.split('@')[0] ?? 'User',
+            name: fallbackName,
             profileImageUrl: null,
             selectedLanguage: 'urdu',
             points: 0,

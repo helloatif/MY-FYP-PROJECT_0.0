@@ -29,7 +29,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       _messages.add(
         ChatMessage(
           text:
-              'Hello! 👋 I\'m your AI language assistant. Ask me anything about Urdu or Punjabi!',
+              'Hello! I\'m here to help you with Urdu or Punjabi. Ask me anything about the language!',
           isUser: false,
         ),
       );

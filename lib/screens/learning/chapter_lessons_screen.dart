@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../services/chapter_service.dart';
+import '../../services/ml_vocabulary_service.dart';
 import '../../data/vocabulary_data.dart';
 import '../../providers/learning_provider.dart';
 import 'teaching_lesson_screen.dart';
@@ -19,7 +20,9 @@ class ChapterLessonsScreen extends StatefulWidget {
 class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late List<LessonVocabulary> _lessons;
+  List<LessonVocabulary> _lessons = [];
+  bool _isLoadingLessons = true;
+  String _loadError = '';
 
   @override
   void initState() {
@@ -29,7 +32,79 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
       vsync: this,
     );
     _controller.forward();
-    _lessons = widget.chapter.getLessons();
+    _loadLessonsFromMl();
+  }
+
+  Future<void> _loadLessonsFromMl() async {
+    setState(() {
+      _isLoadingLessons = true;
+      _loadError = '';
+    });
+
+    try {
+      final lessonCount = widget.chapter.lessonCount;
+      final generatedLessons = <LessonVocabulary>[];
+
+      for (int lessonIdx = 0; lessonIdx < lessonCount; lessonIdx++) {
+        final predictions = await MLVocabularyService.generateVocabularyWithML(
+          chapterId: widget.chapter.id,
+          lessonIndex: lessonIdx,
+          language: widget.chapter.language,
+          count: 25,
+        );
+
+        if (predictions.isEmpty) {
+          continue;
+        }
+
+        final words = predictions
+            .map(
+              (p) => VocabWord(
+                urdu: p.word,
+                english: p.translation,
+                pronunciation: p.pronunciation,
+                exampleSentence: p.example ?? p.word,
+                exampleEnglish: p.translation,
+              ),
+            )
+            .toList();
+
+        generatedLessons.add(
+          LessonVocabulary(
+            lessonNumber: lessonIdx + 1,
+            title: 'ML Lesson ${lessonIdx + 1}',
+            titleEnglish: widget.chapter.topics.length > lessonIdx
+                ? widget.chapter.topics[lessonIdx]
+                : 'Lesson ${lessonIdx + 1}',
+            words: words,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+
+      if (generatedLessons.isEmpty) {
+        setState(() {
+          _lessons = [];
+          _loadError =
+              'XLM-RoBERTa did not return chapter lesson content. Please retry.';
+          _isLoadingLessons = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _lessons = generatedLessons;
+        _isLoadingLessons = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _lessons = [];
+        _loadError = 'Failed to load chapter lessons from XLM-RoBERTa.';
+        _isLoadingLessons = false;
+      });
+    }
   }
 
   @override
@@ -40,6 +115,39 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingLessons) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_lessons.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: Text(widget.chapter.titleEnglish)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _loadError.isNotEmpty
+                      ? _loadError
+                      : 'No lesson data returned by XLM-RoBERTa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _loadLessonsFromMl,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry ML Load'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final learningProvider = Provider.of<LearningProvider>(context);
     final completedLessons = learningProvider.getCompletedLessonsCount(
       widget.chapter.id,
@@ -49,7 +157,9 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
         : (completedLessons / _lessons.length).clamp(0.0, 1.0);
     final totalWords = _lessons.fold<int>(0, (sum, l) => sum + l.words.length);
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: CustomScrollView(
         slivers: [
           // ─── HEADER ───
@@ -505,7 +615,7 @@ class _ChapterLessonsScreenState extends State<ChapterLessonsScreen>
       ),
     ).then(
       (_) => setState(() {
-        _lessons = widget.chapter.getLessons();
+        // Keep ML-loaded lessons; only UI/progress state refresh is needed.
       }),
     );
   }

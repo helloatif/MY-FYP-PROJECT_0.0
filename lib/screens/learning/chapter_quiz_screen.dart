@@ -1,12 +1,16 @@
-import 'dart:math';
+import 'dart:math' show min;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../providers/learning_provider.dart';
 import '../../providers/gamification_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../services/voice_service.dart';
 import '../../services/chapter_service.dart';
-import '../../data/vocabulary_data.dart';
+import '../../services/quiz_generator_service.dart';
+import '../../services/personalization_service.dart';
+import '../../services/huggingface_api_service.dart';
+import '../../services/language_detection_service.dart';
 
 /// Question types for the chapter quiz
 enum QuestionType {
@@ -52,12 +56,18 @@ class ChapterQuizScreen extends StatefulWidget {
 
 class _ChapterQuizScreenState extends State<ChapterQuizScreen>
     with TickerProviderStateMixin {
-  late List<ChapterQuizQuestion> _questions;
+  List<ChapterQuizQuestion> _questions = [];
+  bool _isLoadingQuestions = true;
   int _currentQuestionIndex = 0;
   bool _showResult = false;
   bool _isAnswerChecked = false;
   bool _isListening = false;
   String _recognizedText = '';
+  String _languageDetectionNote = '';
+  String _loadError = '';
+  PronunciationAnalysis? _pronunciationAnalysis;
+  final LanguageDetectionService _languageDetectionService =
+      LanguageDetectionService();
 
   final TextEditingController _answerController = TextEditingController();
   late AnimationController _animationController;
@@ -86,157 +96,76 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
     super.dispose();
   }
 
-  /// Generate 20 questions from chapter vocabulary
-  void _generateQuestions() {
+  /// Generate chapter quiz questions using ML-enhanced quiz generation
+  void _generateQuestions() async {
     final chapterId = widget.chapter.id;
-    final lessonsList =
-        VocabularyData.urduLessons[chapterId] ??
-        VocabularyData.punjabiLessons[chapterId] ??
-        [];
+    final language = widget.chapter.language;
 
-    // Collect all words from all lessons
-    final allWords = lessonsList.expand((lesson) => lesson.words).toList();
-
-    if (allWords.isEmpty) {
-      // Fallback if no words
-      _questions = _generateFallbackQuestions();
-      return;
+    if (mounted) {
+      setState(() {
+        _isLoadingQuestions = true;
+      });
     }
 
-    // Shuffle words
-    allWords.shuffle(Random());
+    try {
+      // Use ML-enhanced quiz generation with semantic distractors
+      final mlQuestions = await QuizGeneratorService.generateChapterReviewQuiz(
+        chapterId: chapterId,
+        language: language,
+        questionCount: 10,
+      );
 
-    // Take enough words for 20 questions (may need fewer unique words with different question types)
-    final selectedWords = allWords.take(min(25, allWords.length)).toList();
+      debugPrint(
+        '✅ Generated ${mlQuestions.length} ML-enhanced quiz questions',
+      );
 
-    _questions = [];
-    final random = Random();
+      // Convert to ChapterQuizQuestion format
+      if (mlQuestions.isNotEmpty) {
+        _questions = mlQuestions.map((q) {
+          final mappedType = switch (q.type) {
+            QuizType.vocabulary => QuestionType.multipleChoice,
+            QuizType.typing => QuestionType.writtenInput,
+            QuizType.grammar => QuestionType.fillInBlank,
+            QuizType.listening => QuestionType.pronunciation,
+            QuizType.comprehension => QuestionType.writtenInput,
+            QuizType.matching => QuestionType.writtenInput,
+          };
 
-    // Distribute question types: 5 each of 4 types = 20 questions
-    // Written Input: 5, MCQ: 5, Fill in Blank: 5, Pronunciation: 5
-    int writtenCount = 0, mcqCount = 0, fillCount = 0, pronCount = 0;
+          return ChapterQuizQuestion(
+            id: q.id,
+            type: mappedType,
+            question: q.question,
+            correctAnswer: q.correctAnswer,
+            options: q.options,
+            urduWord: q.questionUrdu ?? '',
+            pronunciation: q.hint,
+          );
+        }).toList();
+        _loadError = '';
 
-    for (int i = 0; i < 20 && i < selectedWords.length; i++) {
-      final word = selectedWords[i % selectedWords.length];
-      QuestionType type;
-
-      // Distribute evenly
-      if (writtenCount < 5) {
-        type = QuestionType.writtenInput;
-        writtenCount++;
-      } else if (mcqCount < 5) {
-        type = QuestionType.multipleChoice;
-        mcqCount++;
-      } else if (fillCount < 5) {
-        type = QuestionType.fillInBlank;
-        fillCount++;
-      } else {
-        type = QuestionType.pronunciation;
-        pronCount++;
+        setState(() {
+          _isLoadingQuestions = false;
+        });
+        return;
       }
 
-      _questions.add(
-        _createQuestion(
-          id: 'q_$i',
-          word: word,
-          type: type,
-          allWords: allWords,
-          random: random,
-        ),
-      );
+      _questions = [];
+      _loadError = 'XLM-RoBERTa did not return chapter quiz questions.';
+    } catch (e) {
+      debugPrint('⚠️ ML quiz generation failed: $e');
+      _questions = [];
+      _loadError = 'Failed to load chapter quiz from XLM-RoBERTa.';
     }
 
-    // Shuffle the questions so types are mixed
-    _questions.shuffle(random);
-  }
-
-  /// Create a single question based on type
-  ChapterQuizQuestion _createQuestion({
-    required String id,
-    required VocabWord word,
-    required QuestionType type,
-    required List<VocabWord> allWords,
-    required Random random,
-  }) {
-    switch (type) {
-      case QuestionType.writtenInput:
-        return ChapterQuizQuestion(
-          id: id,
-          type: type,
-          question: 'Write the English translation for:\n\n"${word.urdu}"',
-          correctAnswer: word.english.trim().toLowerCase(),
-          urduWord: word.urdu,
-          pronunciation: word.pronunciation,
-        );
-
-      case QuestionType.multipleChoice:
-        // Generate 3 wrong options
-        final wrongOptions =
-            allWords.where((w) => w.english != word.english).take(10).toList()
-              ..shuffle(random);
-        final options = [
-          word.english,
-          ...wrongOptions.take(3).map((w) => w.english),
-        ]..shuffle(random);
-
-        return ChapterQuizQuestion(
-          id: id,
-          type: type,
-          question: 'What does "${word.urdu}" mean in English?',
-          correctAnswer: word.english,
-          options: options,
-          urduWord: word.urdu,
-          pronunciation: word.pronunciation,
-        );
-
-      case QuestionType.fillInBlank:
-        // Create fill in the blank from example sentence
-        String sentence = word.exampleEnglish ?? word.english;
-        String blank = word.english.split(' ').first;
-        String questionSentence = sentence.replaceFirst(
-          RegExp(blank, caseSensitive: false),
-          '________',
-        );
-
-        return ChapterQuizQuestion(
-          id: id,
-          type: type,
-          question:
-              'Fill in the blank:\n\n"$questionSentence"\n\nHint: ${word.urdu}',
-          correctAnswer: blank.toLowerCase(),
-          urduWord: word.urdu,
-          pronunciation: word.pronunciation,
-        );
-
-      case QuestionType.pronunciation:
-        return ChapterQuizQuestion(
-          id: id,
-          type: type,
-          question:
-              'Pronounce this word correctly:\n\n"${word.urdu}"\n\nPronunciation: ${word.pronunciation}',
-          correctAnswer: word.urdu,
-          urduWord: word.urdu,
-          pronunciation: word.pronunciation,
-        );
+    if (mounted) {
+      setState(() {
+        _isLoadingQuestions = false;
+      });
     }
   }
 
-  /// Fallback questions if no vocabulary data
-  List<ChapterQuizQuestion> _generateFallbackQuestions() {
-    return List.generate(
-      20,
-      (i) => ChapterQuizQuestion(
-        id: 'fallback_$i',
-        type: QuestionType.multipleChoice,
-        question: 'Sample question ${i + 1}',
-        correctAnswer: 'Answer',
-        options: ['Answer', 'Wrong 1', 'Wrong 2', 'Wrong 3'],
-      ),
-    );
-  }
-
-  /// Check the current answer
-  void _checkAnswer() {
+  /// Check the current answer using ML-powered scoring
+  void _checkAnswer() async {
     final question = _questions[_currentQuestionIndex];
     final userAnswer = question.type == QuestionType.pronunciation
         ? _recognizedText
@@ -244,32 +173,87 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
 
     setState(() {
       question.userAnswer = userAnswer;
+    });
 
-      if (question.type == QuestionType.pronunciation) {
-        // For pronunciation, use similarity scoring
+    // Use ML-based scoring for written answers
+    if (question.type == QuestionType.multipleChoice) {
+      // MCQ: Simple exact match
+      setState(() {
+        question.isCorrect = userAnswer == question.correctAnswer;
+        _isAnswerChecked = true;
+      });
+    } else if (question.type != QuestionType.pronunciation) {
+      // Written/Fill-in-blank: Use HuggingFace ML scoring
+      try {
+        final detection = await _languageDetectionService.detectLanguage(
+          userAnswer,
+        );
+        final scoreResult = await HuggingFaceApiService.scoreAnswer(
+          userInput: userAnswer,
+          correctAnswer: question.correctAnswer,
+        );
+
+        final mismatch =
+            detection.language != widget.chapter.language &&
+            detection.confidence >= 0.65;
+
+        setState(() {
+          question.isCorrect = mismatch ? false : scoreResult.isCorrect;
+          _languageDetectionNote =
+              'Detected ${detection.language} (${(detection.confidence * 100).round()}%)';
+          _isAnswerChecked = true;
+        });
+        debugPrint(
+          '✅ ML Score for "$userAnswer": ${scoreResult.score}% (${scoreResult.feedback})',
+        );
+      } catch (e) {
+        // Fallback: Use string similarity if ML fails
+        debugPrint('⚠️ ML scoring failed: $e, using fallback');
         final similarity = _calculateSimilarity(
           question.correctAnswer.toLowerCase(),
           userAnswer.toLowerCase(),
         );
-        question.isCorrect = similarity >= 0.6; // 60% similarity threshold
-      } else if (question.type == QuestionType.multipleChoice) {
-        question.isCorrect = userAnswer == question.correctAnswer;
-      } else {
-        // For written and fill-in-blank, normalize and compare
-        question.isCorrect =
-            _normalizeAnswer(userAnswer) ==
-            _normalizeAnswer(question.correctAnswer);
+        setState(() {
+          question.isCorrect = similarity >= 0.7;
+          _languageDetectionNote = '';
+          _isAnswerChecked = true;
+        });
       }
-
-      _isAnswerChecked = true;
-    });
+    } else {
+      // Pronunciation: ML + phoneme analysis
+      final analysis = await PronunciationService.analyzePronunciation(
+        expected: question.correctAnswer,
+        spoken: userAnswer,
+        language: widget.chapter.language,
+      );
+      setState(() {
+        question.isCorrect = analysis.score >= 65;
+        _pronunciationAnalysis = analysis;
+        _languageDetectionNote = '';
+        _isAnswerChecked = true;
+      });
+    }
 
     _animationController.forward().then((_) => _animationController.reverse());
+
+    // Record attempt in personalization service
+    _recordPersonalizationData(question, userAnswer);
   }
 
-  /// Normalize answer for comparison
-  String _normalizeAnswer(String answer) {
-    return answer.toLowerCase().trim().replaceAll(RegExp(r'[^\w\s]'), '');
+  /// Record user attempt for personalization
+  void _recordPersonalizationData(ChapterQuizQuestion question, String answer) {
+    try {
+      final userProvider = context.read<UserProvider>();
+      if (userProvider.currentUser != null) {
+        PersonalizationService().recordWordAttempt(
+          word: question.correctAnswer,
+          isCorrect: question.isCorrect ?? false,
+          language: widget.chapter.language,
+        );
+      }
+    } catch (e) {
+      debugPrint('Personalization recording error: $e');
+    }
   }
 
   /// Calculate similarity between two strings
@@ -315,6 +299,8 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
         _isAnswerChecked = false;
         _answerController.clear();
         _recognizedText = '';
+        _languageDetectionNote = '';
+        _pronunciationAnalysis = null;
       });
     } else {
       _showResults();
@@ -323,8 +309,9 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
 
   /// Show final results
   void _showResults() {
+    if (_questions.isEmpty) return;
     final correctCount = _questions.where((q) => q.isCorrect == true).length;
-    final score = (correctCount / 20) * 100;
+    final score = (correctCount / _questions.length) * 100;
     final passed = score >= 80;
 
     setState(() {
@@ -381,6 +368,38 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingQuestions) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_questions.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Chapter Quiz')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _loadError.isNotEmpty
+                      ? _loadError
+                      : 'No chapter quiz questions available from XLM-RoBERTa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _generateQuestions,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry ML Load'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_showResult) {
       return _buildResultScreen();
     }
@@ -434,7 +453,7 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Question ${_currentQuestionIndex + 1} of 20',
+                'Question ${_currentQuestionIndex + 1} of ${_questions.length}',
                 style: const TextStyle(
                   color: AppTheme.textDark,
                   fontWeight: FontWeight.w600,
@@ -445,7 +464,7 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: (_currentQuestionIndex + 1) / 20,
+            value: (_currentQuestionIndex + 1) / _questions.length,
             backgroundColor: AppTheme.textDark.withOpacity(0.1),
             valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.orange),
             borderRadius: BorderRadius.circular(4),
@@ -801,6 +820,25 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
                     ),
                   ),
                 ],
+                if (_languageDetectionNote.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _languageDetectionNote,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
+                if (question.type == QuestionType.pronunciation &&
+                    _pronunciationAnalysis != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Pronunciation: ${_pronunciationAnalysis!.score}% | ML ${_pronunciationAnalysis!.mlSimilarity}% | Phoneme ${_pronunciationAnalysis!.phonemeAccuracy}%',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  Text(
+                    _pronunciationAnalysis!.feedback,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
               ],
             ),
           ),
@@ -843,7 +881,9 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
                   minimumSize: const Size(double.infinity, 56),
                 ),
                 child: Text(
-                  _currentQuestionIndex < 19 ? 'Next Question' : 'See Results',
+                  _currentQuestionIndex < _questions.length - 1
+                      ? 'Next Question'
+                      : 'See Results',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -874,7 +914,7 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
 
   Widget _buildResultScreen() {
     final correctCount = _questions.where((q) => q.isCorrect == true).length;
-    final score = (correctCount / 20) * 100;
+    final score = (correctCount / _questions.length) * 100;
     final passed = score >= 80;
 
     return Scaffold(
@@ -931,7 +971,7 @@ class _ChapterQuizScreenState extends State<ChapterQuizScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '$correctCount out of 20 correct',
+                  '$correctCount out of ${_questions.length} correct',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: AppTheme.textDark.withOpacity(0.7),
                   ),

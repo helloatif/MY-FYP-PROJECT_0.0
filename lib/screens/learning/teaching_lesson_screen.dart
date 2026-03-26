@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../services/chapter_service.dart';
 import '../../services/voice_service.dart';
+import '../../services/word_recommendation_service.dart';
+import '../../services/ml_vocabulary_service.dart';
 import '../../data/vocabulary_data.dart';
 import '../../providers/learning_provider.dart';
 import '../../providers/gamification_provider.dart';
@@ -33,17 +35,14 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
   bool _isSpeaking = false;
   bool _lessonDone = false;
   bool _xpWasAwarded = false;
-  late final List<VocabWord> _lessonWords;
+  List<VocabWord> _lessonWords = [];
+  bool _isLoadingMlWords = true;
+  String? _mlLoadError;
   late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    // Limit to 25 words per lesson
-    _lessonWords = widget.lesson.words.length > 25
-        ? widget.lesson.words.take(25).toList()
-        : widget.lesson.words;
-
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
@@ -51,6 +50,9 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
 
     // Initialize TTS
     VoiceService.initialize();
+
+    // Try to replace static words with ML-generated words from XLM-RoBERTa.
+    _loadLessonWordsFromMl();
 
     // Auto-speak first word after a delay
     Future.delayed(const Duration(milliseconds: 500), _speakWord);
@@ -61,6 +63,58 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
     _pulseController.dispose();
     VoiceService.stop();
     super.dispose();
+  }
+
+  Future<void> _loadLessonWordsFromMl() async {
+    try {
+      final predictions = await MLVocabularyService.generateVocabularyWithML(
+        chapterId: widget.chapter.id,
+        lessonIndex: widget.lessonIndex,
+        language: widget.chapter.language,
+        count: 25,
+      );
+
+      if (!mounted) return;
+
+      if (predictions.isNotEmpty) {
+        final mlWords = predictions
+            .map(
+              (p) => VocabWord(
+                urdu: p.word,
+                english: p.translation,
+                pronunciation: p.pronunciation,
+                exampleSentence: p.example ?? p.word,
+                exampleEnglish: p.translation,
+              ),
+            )
+            .toList();
+
+        setState(() {
+          _lessonWords = mlWords;
+          _currentWordIndex = 0;
+          _mlLoadError = null;
+          _isLoadingMlWords = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _lessonWords = [];
+        _isLoadingMlWords = false;
+        _mlLoadError =
+            'XLM-RoBERTa did not return lesson words. Please try again.';
+      });
+      return;
+    } catch (e) {
+      debugPrint('ML lesson content load failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _lessonWords = [];
+        _isLoadingMlWords = false;
+        _mlLoadError = 'Failed to load lesson from XLM-RoBERTa.';
+      });
+      return;
+    }
   }
 
   VocabWord get _currentWord => _lessonWords[_currentWordIndex];
@@ -256,8 +310,49 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_isLoadingMlWords && _lessonWords.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_lessonWords.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Lesson')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _mlLoadError ??
+                      'No lesson content available from XLM-RoBERTa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isLoadingMlWords = true;
+                      _mlLoadError = null;
+                    });
+                    _loadLessonWordsFromMl();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry ML Load'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: Stack(
         children: [
           SafeArea(
@@ -284,6 +379,8 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
                           _buildTranslationCard(),
                           const SizedBox(height: 20),
                           if (_currentWord.hasSentence) _buildSentenceCard(),
+                          const SizedBox(height: 20),
+                          _buildRelatedWordsCard(),
                         ],
                       ),
                     ),
@@ -325,6 +422,10 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
                   'Lesson ${widget.lessonIndex + 1} • ${_currentWordIndex + 1}/${_lessonWords.length}',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
+                Text(
+                  'Content source: XLM-RoBERTa',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
               ],
             ),
           ),
@@ -334,13 +435,16 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
   }
 
   Widget _buildProgressIndicator() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: LinearProgressIndicator(
             value: _progress,
-            backgroundColor: Colors.grey.shade200,
+            backgroundColor: isDark
+                ? AppTheme.darkSurfaceVariant
+                : Colors.grey.shade200,
             valueColor: AlwaysStoppedAnimation(widget.chapter.color),
             minHeight: 8,
           ),
@@ -639,6 +743,76 @@ class _TeachingLessonScreenState extends State<TeachingLessonScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// Build related words card using semantic recommendations
+  Widget _buildRelatedWordsCard() {
+    return FutureBuilder<List<WordRecommendation>>(
+      future: WordRecommendationService().findSimilarWords(
+        word: _currentWord.urdu,
+        language: widget.chapter.language,
+        count: 3,
+        minSimilarity: 0.3,
+      ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final relatedWords = snapshot.data!;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.blue.withOpacity(0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    color: Colors.blue.shade600,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Related Words',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: relatedWords.map((rec) {
+                  return Chip(
+                    label: Text(
+                      rec.word.urdu,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                    backgroundColor: Colors.white,
+                    side: BorderSide(color: Colors.blue.shade200),
+                    onDeleted: null,
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

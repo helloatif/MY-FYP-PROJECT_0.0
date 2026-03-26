@@ -36,10 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   
   # Firebase
-  firebase_core: ^2.24.0
-  firebase_auth: ^4.10.0
-  cloud_firestore: ^4.13.0
-  firebase_storage: ^11.5.0
+  firebase_core: ^4.6.0
+  firebase_auth: ^6.3.0
+  cloud_firestore: ^6.2.0
+  firebase_storage: ^13.2.0
   
   # Voice and Speech
   speech_to_text: ^7.0.0
@@ -73,6 +73,7 @@ dependencies:
   
   # Utilities
   uuid: ^4.0.0
+  js: ^0.6.7
   
   # App Icon & Splash
   flutter_launcher_icons: ^0.13.1

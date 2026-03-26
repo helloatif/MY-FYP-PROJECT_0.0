@@ -29,43 +29,37 @@ bool _initialDarkMode = false;
 // Global variable to store initial userId (used by ThemeProvider at startup)
 String _initialUserId = '';
 
+Future<void>? _firebaseInitFuture;
+
+Future<void> _ensureFirebaseInitialized() {
+  _firebaseInitFuture ??= () async {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+
+      if (kIsWeb) {
+        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+      }
+    } catch (e) {
+      // Firebase initialization error - continue gracefully
+    }
+  }();
+
+  return _firebaseInitFuture!;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase FIRST so we can read the current user UID
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
-    // Set Firebase Auth persistence to LOCAL for web
-    // Mobile (Android/iOS) uses LOCAL persistence by default
-    if (kIsWeb) {
-      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-    }
-    print('✓ Firebase initialized successfully - users will stay logged in');
-  } catch (e) {
-    print('✗ Firebase initialization error: $e');
-  }
-
-  // Load theme preference AFTER Firebase so we can use the user-specific key
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    _initialUserId = uid;
-    final key = uid.isNotEmpty ? 'isDarkMode_$uid' : 'isDarkMode';
-    _initialDarkMode = prefs.getBool(key) ?? false;
-    print('✓ Theme preference loaded (key=$key): isDarkMode=$_initialDarkMode');
-  } catch (e) {
-    print('⚠ Could not load theme preference: $e');
-  }
-
-  // Start app after Firebase is ready
+  // Render the first Flutter frame immediately to reduce native splash hold time.
   runApp(const MyApp());
 }
 
 // Helper function to determine initial screen based on auth state
 Future<Widget> _determineInitialScreen() async {
+  await _ensureFirebaseInitialized();
+
   final user = FirebaseAuth.instance.currentUser;
 
   if (user != null) {
@@ -81,14 +75,9 @@ Future<Widget> _determineInitialScreen() async {
         );
 
         if (localFlag != null && localFlag.isNotEmpty) {
-          print(
-            '✅ Auth: Language found in local storage ("$localFlag"), going to home',
-          );
           return const HomeScreen();
         }
-      } catch (e) {
-        print('⚠️ Auth: Error reading local storage: $e');
-      }
+      } catch (e) {}
 
       // Fallback to Firestore check
       try {
@@ -98,9 +87,6 @@ Future<Widget> _determineInitialScreen() async {
             .get();
 
         final selectedLanguage = doc.data()?['selectedLanguage'] as String?;
-        print('🔍 Auth: Checking Firestore for ${refreshedUser.uid}');
-        print('🔍 Auth: Document exists = ${doc.exists}');
-        print('🔍 Auth: Language = "$selectedLanguage"');
 
         if (selectedLanguage != null && selectedLanguage.isNotEmpty) {
           // Save to local storage for next time
@@ -109,23 +95,18 @@ Future<Widget> _determineInitialScreen() async {
             '${_languageSelectedKey}_${refreshedUser.uid}',
             selectedLanguage,
           );
-          print('✅ Auth: Language found ("$selectedLanguage"), going to home');
           return const HomeScreen();
         } else {
-          print('✅ Auth: No language, going to selection');
           return const LanguageSelectionScreen();
         }
       } catch (e) {
-        print('⚠️ Auth Error reading language: $e');
         return const LanguageSelectionScreen();
       }
     } else if (refreshedUser != null && !refreshedUser.emailVerified) {
-      print('✅ Auth: Email not verified, going to verification');
       return const EmailVerificationScreen();
     }
   }
 
-  print('✅ Auth: No user logged in, going to login');
   return const LoginScreen();
 }
 
@@ -247,8 +228,10 @@ class _AuthGateState extends State<_AuthGate> {
     if (_providersLoaded) return;
     _providersLoaded = true;
 
+    await _ensureFirebaseInitialized();
+
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null && user.emailVerified) {
+    if (user != null && mounted && user.emailVerified) {
       // Load user-specific theme FIRST so dark mode switches instantly
       final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
       await themeProvider.loadForUser(user.uid);
@@ -270,8 +253,6 @@ class _AuthGateState extends State<_AuthGate> {
         listen: false,
       );
       await learningProvider.loadProgressFromFirestore();
-
-      debugPrint('✓ Providers loaded on app start');
     }
   }
 

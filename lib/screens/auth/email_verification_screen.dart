@@ -8,6 +8,7 @@ import '../../services/firebase_service.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
 import '../../providers/learning_provider.dart';
+import '../../providers/theme_provider.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key});
@@ -91,6 +92,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
             // Check if user has already selected a language
             try {
+              final themeProvider = Provider.of<ThemeProvider>(
+                context,
+                listen: false,
+              );
+              await themeProvider.loadForUser(refreshedUser.uid);
+
               // Load user data into provider first
               final userProvider = Provider.of<UserProvider>(
                 context,
@@ -171,6 +178,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         // Already verified, check language selection and navigate accordingly
         if (mounted) {
           try {
+            final themeProvider = Provider.of<ThemeProvider>(
+              context,
+              listen: false,
+            );
+            await themeProvider.loadForUser(user.uid);
+
             // Load user data into provider first
             final userProvider = Provider.of<UserProvider>(
               context,
@@ -185,13 +198,19 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
             final selectedLanguage = doc.data()?['selectedLanguage'] as String?;
 
-            if (selectedLanguage != null && selectedLanguage.isNotEmpty) {
-              Navigator.of(context).pushReplacementNamed('/home');
-            } else {
-              Navigator.of(context).pushReplacementNamed('/language-selection');
+            if (mounted) {
+              if (selectedLanguage != null && selectedLanguage.isNotEmpty) {
+                Navigator.of(context).pushReplacementNamed('/home');
+              } else {
+                Navigator.of(
+                  context,
+                ).pushReplacementNamed('/language-selection');
+              }
             }
           } catch (e) {
-            Navigator.of(context).pushReplacementNamed('/language-selection');
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed('/language-selection');
+            }
           }
         }
         return;
@@ -287,7 +306,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 width: 120,
                 height: 120,
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                  color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(

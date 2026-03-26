@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../providers/user_provider.dart';
+import '../../services/ml_vocabulary_service.dart';
 
 class GrammarCheckerScreen extends StatefulWidget {
   const GrammarCheckerScreen({super.key});
@@ -28,15 +29,42 @@ class _GrammarCheckerScreenState extends State<GrammarCheckerScreen> {
       _feedback = '';
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    final inputText = _textController.text.trim();
+    final expectedText = inputText;
+
+    final result = await MLVocabularyService.checkGrammarEnhanced(
+      userInput: inputText,
+      expectedText: expectedText,
+      language: language,
+    );
+
+    final buffer = StringBuffer();
+    buffer.writeln('Score: ${result.score}%');
+    buffer.writeln('ML Score: ${result.mlScore}%');
+    buffer.writeln('Semantic Score: ${result.semanticScore}%');
+    buffer.writeln('');
+    buffer.writeln(result.feedback);
+
+    if (result.ruleViolations.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('Issues found:');
+      for (final violation in result.ruleViolations) {
+        buffer.writeln('- ${violation.message}');
+      }
+    }
+
+    if (result.suggestions.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('Suggestions:');
+      for (final suggestion in result.suggestions) {
+        buffer.writeln('- $suggestion');
+      }
+    }
 
     if (mounted) {
       setState(() {
         _isAnalyzing = false;
-        _feedback = language == 'urdu'
-            ? 'Your text correction:\n\n✓ Words are correct\n✓ Grammar can be improved\n\nSuggestion: Use proper punctuation marks'
-            : 'Your text correction:\n\n✓ Words are correct\n✓ Grammar can be improved\n\nSuggestion: Use proper Punjabi script characters';
+        _feedback = buffer.toString().trim();
       });
     }
   }

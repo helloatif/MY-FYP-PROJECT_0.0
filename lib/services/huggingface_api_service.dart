@@ -1,13 +1,13 @@
 ﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../config/api_keys.dart';
+import '../config/env_config.dart';
 
 /// Service to interact with the HuggingFace deployed model
 /// Model: RAFAY-484/Urdu-Punjabi-V2 (Custom Dataset)
 class HuggingFaceApiService {
   // HuggingFace API Configuration
   static const String _modelId = 'RAFAY-484/Urdu-Punjabi-V2';
-  static const String _hfToken = ApiKeys.huggingFaceModelToken;
+  static String get _hfToken => EnvConfig.getHuggingFaceToken();
 
   // API Endpoints
   static const String _inferenceUrl =
@@ -238,7 +238,7 @@ class QuizScoreResult {
   final int score; // 0, 20, 40, 60, 80, 100
   final String feedback; // English feedback
   final String feedbackUrdu; // Urdu feedback
-  final String emoji; // Emoji indicator
+  final String emoji; // Emoji for the score
   final bool isCorrect; // true if score >= 80
   final int confidence; // Model confidence %
   final String userInput;
@@ -267,5 +267,5 @@ class QuizScoreResult {
   };
 
   @override
-  String toString() => '$emoji $score% - $feedback';
+  String toString() => '$score% - $feedback';
 }

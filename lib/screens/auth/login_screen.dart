@@ -8,6 +8,7 @@ import '../../localization/app_strings.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
 import '../../providers/learning_provider.dart';
+import '../../providers/theme_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -140,6 +141,12 @@ class _LoginScreenState extends State<LoginScreen>
 
           // Load user data first
           try {
+            final themeProvider = Provider.of<ThemeProvider>(
+              context,
+              listen: false,
+            );
+            await themeProvider.loadForUser(userId);
+
             final userProvider = Provider.of<UserProvider>(
               context,
               listen: false,
@@ -179,6 +186,8 @@ class _LoginScreenState extends State<LoginScreen>
                 .collection('users')
                 .doc(userId)
                 .get();
+
+            if (!mounted) return;
 
             final selectedLanguage = doc.data()?['selectedLanguage'] as String?;
             print('🔍 Login: Checking Firestore for user $userId');
@@ -242,7 +251,9 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           );
           await Future.delayed(const Duration(seconds: 3));
-          Navigator.of(context).pushReplacementNamed('/email-verification');
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed('/email-verification');
+          }
           return; // Exit early
         } else if (e.toString().contains('List<Object') ||
             e.toString().contains('PigeonUserInfo') ||

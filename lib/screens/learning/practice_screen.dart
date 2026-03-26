@@ -5,15 +5,19 @@ import '../../themes/app_theme.dart';
 import '../../providers/gamification_provider.dart';
 import '../voice/voice_assistant_screen.dart';
 import '../grammar/grammar_checker_screen.dart';
-import 'ai_assistant_screen.dart';
+import 'translation_practice_screen.dart';
+import 'conversation_mode_screen.dart';
 
 class PracticeScreen extends StatelessWidget {
   const PracticeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,8 +169,9 @@ class PracticeScreen extends StatelessWidget {
 
                   // AI Tutor
                   _PremiumPracticeCard(
-                    title: 'AI Language Tutor',
-                    subtitle: 'Chat with AI to practice conversations',
+                    title: 'Conversation Mode',
+                    subtitle:
+                        'Roleplay chats with AI and live language detection',
                     icon: Icons.smart_toy_rounded,
                     gradient: [
                       const Color(0xFF00B894),
@@ -179,7 +184,7 @@ class PracticeScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const AIAssistantScreen(),
+                          builder: (_) => const ConversationModeScreen(),
                         ),
                       );
                     },
@@ -189,7 +194,8 @@ class PracticeScreen extends StatelessWidget {
                   // Translation Practice
                   _PremiumPracticeCard(
                     title: 'Translation Practice',
-                    subtitle: 'Translate sentences between languages',
+                    subtitle:
+                        'ML translation with auto language detection and confidence',
                     icon: Icons.translate_rounded,
                     gradient: [
                       const Color(0xFFFDCB6E),
@@ -198,11 +204,10 @@ class PracticeScreen extends StatelessWidget {
                     xp: 15,
                     onTap: () {
                       HapticFeedback.lightImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Use the Learn tab → open a lesson → Practice mode for translation exercises!',
-                          ),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TranslationPracticeScreen(),
                         ),
                       );
                     },

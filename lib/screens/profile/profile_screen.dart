@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
-import 'dart:typed_data';
 import '../../themes/app_theme.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/gamification_provider.dart';
@@ -129,8 +128,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: Consumer<UserProvider>(
         builder: (context, userProvider, _) {
           if (userProvider.currentUser == null) {
@@ -186,7 +188,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.2,
+                                      ),
                                       blurRadius: 10,
                                       offset: const Offset(0, 5),
                                     ),
@@ -395,7 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _buildLanguageSwitcher(context, userProvider),
                           const SizedBox(height: 8),
                           _buildSettingsTile(
-                            'AI Assistant 🤖',
+                            'AI Assistant',
                             Icons.smart_toy,
                             () {
                               Navigator.pushNamed(context, '/ai-assistant');
@@ -722,7 +726,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      color: AppTheme.primaryGreen.withOpacity(0.1),
+      color: AppTheme.primaryGreen.withValues(alpha: 0.1),
       child: ListTile(
         leading: const Icon(Icons.language, color: AppTheme.primaryGreen),
         title: const Text(
@@ -755,7 +759,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: const Text('Urdu'),
               subtitle: const Text('اردو - Official language'),
               selected: currentLanguage == 'urdu',
-              selectedTileColor: AppTheme.primaryGreen.withOpacity(0.1),
+              selectedTileColor: AppTheme.primaryGreen.withValues(alpha: 0.1),
               onTap: () {
                 userProvider.setSelectedLanguage('urdu');
                 Navigator.pop(context);

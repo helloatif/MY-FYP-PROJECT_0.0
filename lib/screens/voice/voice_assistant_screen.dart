@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../themes/app_theme.dart';
 import '../../providers/user_provider.dart';
+import '../../services/ai_assistant_service.dart';
+import '../../services/voice_service.dart';
 
 class VoiceAssistantScreen extends StatefulWidget {
   const VoiceAssistantScreen({super.key});
@@ -15,9 +17,10 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
   bool _isSpeaking = false;
   String _recognizedText = '';
   String _assistantResponse = '';
+  String _targetPhrase = '';
+  PronunciationAnalysis? _analysis;
 
-  // Urdu common phrases
-  final List<Map<String, String>> _urduPhrases = [
+  final List<Map<String, String>> _urduPhrases = const [
     {'word': 'السلام علیکم', 'english': 'Peace be upon you', 'emoji': '👋'},
     {'word': 'شکریہ', 'english': 'Thank you', 'emoji': '🙏'},
     {'word': 'براہ کرم', 'english': 'Please', 'emoji': '📍'},
@@ -26,8 +29,7 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
     {'word': 'میرا نام...ہے', 'english': 'My name is...', 'emoji': '📝'},
   ];
 
-  // Punjabi common phrases
-  final List<Map<String, String>> _punjabiPhrases = [
+  final List<Map<String, String>> _punjabiPhrases = const [
     {'word': 'ست سری اکال', 'english': 'Hello (Sikh greeting)', 'emoji': '👋'},
     {'word': 'شکریہ', 'english': 'Thank you', 'emoji': '🙏'},
     {'word': 'مہربانی نال', 'english': 'Please', 'emoji': '📍'},
@@ -36,83 +38,131 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
     {'word': 'میرا ناں...اے', 'english': 'My name is...', 'emoji': '📝'},
   ];
 
-  void _startListening(String language) async {
+  @override
+  void initState() {
+    super.initState();
+    VoiceService.initialize();
+  }
+
+  @override
+  void dispose() {
+    VoiceService.stop();
+    super.dispose();
+  }
+
+  Future<void> _startListening(String language) async {
     setState(() {
       _isListening = true;
-      _recognizedText = language == 'urdu' ? 'سن رہے ہیں...' : 'سن رہے آں...';
+      _recognizedText = '';
+      _analysis = null;
     });
 
-    // Simulate speech recognition
-    await Future.delayed(const Duration(seconds: 2));
+    final result = await VoiceService.listen(
+      language: language,
+      onStart: () {},
+      onResult: (text) {
+        if (!mounted) return;
+        setState(() {
+          _recognizedText = text;
+        });
+      },
+      onStop: () {
+        if (!mounted) return;
+        setState(() {
+          _isListening = false;
+        });
+      },
+    );
 
-    if (mounted) {
-      setState(() {
-        _recognizedText = language == 'urdu' ? 'السلام علیکم' : 'ست سری اکال';
-        _isListening = false;
-      });
-
-      _generateResponse(language);
+    if (!mounted || result == null || result.trim().isEmpty) {
+      return;
     }
+
+    setState(() {
+      _recognizedText = result;
+    });
+
+    if (_targetPhrase.isNotEmpty) {
+      final analysis = await PronunciationService.analyzePronunciation(
+        expected: _targetPhrase,
+        spoken: result,
+        language: language,
+      );
+      if (!mounted) return;
+      setState(() {
+        _analysis = analysis;
+      });
+    }
+
+    await _generateResponse(language);
   }
 
-  void _generateResponse(String language) async {
+  Future<void> _generateResponse(String language) async {
     setState(() {
+      _isSpeaking = true;
       _assistantResponse = language == 'urdu'
           ? 'جواب تیار ہو رہا ہے...'
-          : 'جواب تیار ہو رہیا اے...';
-      _isSpeaking = true;
+          : '...';
     });
 
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (mounted) {
+    try {
+      final response = await AIAssistantService.getResponse(_recognizedText);
+      if (!mounted) return;
       setState(() {
-        _assistantResponse = language == 'urdu'
-            ? 'وعلیکم السلام ورحمة الله وبركاته'
-            : 'واہے گرو جی کا خالصہ، واہے گرو جی کی فتح';
+        _assistantResponse = response;
         _isSpeaking = false;
       });
-
-      // Simulate speaking
-      _speakResponse();
+      await VoiceService.speak(response, language);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _assistantResponse = 'Could not generate response.';
+        _isSpeaking = false;
+      });
     }
   }
 
-  void _speakResponse() async {
+  Future<void> _speakResponse(String language) async {
+    if (_assistantResponse.isEmpty) return;
     setState(() {
       _isSpeaking = true;
     });
+    await VoiceService.speak(_assistantResponse, language);
+    if (!mounted) return;
+    setState(() {
+      _isSpeaking = false;
+    });
+  }
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      setState(() {
-        _isSpeaking = false;
-      });
-    }
+  Widget _dot() {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppTheme.primaryGreen.withValues(alpha: 0.7),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final userProvider = Provider.of<UserProvider>(context);
-    final language = userProvider.currentUser?.selectedLanguage ?? 'urdu';
+    final language =
+        Provider.of<UserProvider>(context).currentUser?.selectedLanguage ??
+        'urdu';
     final phrases = language == 'urdu' ? _urduPhrases : _punjabiPhrases;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(language == 'urdu' ? 'Learn by Voice' : 'Learn by Voice'),
-      ),
+      appBar: AppBar(title: const Text('Learn by Voice')),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Voice Assistant Area
             Container(
               color: AppTheme.primaryGreen.withValues(alpha: 0.1),
               padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
-                  const SizedBox(height: 24),
-                  // Animated Microphone Icon
+                  const SizedBox(height: 16),
                   Container(
                     width: 120,
                     height: 120,
@@ -125,84 +175,82 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                         BoxShadow(
                           color: AppTheme.primaryGreen.withValues(alpha: 0.3),
                           blurRadius: 20,
-                          spreadRadius: _isListening ? 10 : 0,
+                          spreadRadius: _isListening ? 8 : 0,
                         ),
                       ],
                     ),
                     child: Icon(Icons.mic, size: 60, color: AppTheme.white),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Text(
-                    'Your Text',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: AppTheme.darkGray),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _recognizedText,
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    _recognizedText.isEmpty
+                        ? 'Tap record and speak'
+                        : _recognizedText,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: AppTheme.primaryGreen,
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 32),
-
-                  // Assistant Response
-                  if (_assistantResponse.isNotEmpty) ...[
-                    Text(
-                      'Assistant Response',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppTheme.darkGray),
-                    ),
-                    const SizedBox(height: 8),
+                  const SizedBox(height: 20),
+                  if (_assistantResponse.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppTheme.white,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppTheme.primaryGreen,
-                          width: 2,
-                        ),
+                        border: Border.all(color: AppTheme.primaryGreen),
                       ),
-                      child: Column(
-                        children: [
-                          if (_isSpeaking)
-                            Row(
+                      child: _isSpeaking
+                          ? Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                _buildAnimatedDot(0),
+                                _dot(),
                                 const SizedBox(width: 8),
-                                _buildAnimatedDot(1),
+                                _dot(),
                                 const SizedBox(width: 8),
-                                _buildAnimatedDot(2),
+                                _dot(),
                               ],
                             )
-                          else
-                            Text(
-                              _assistantResponse,
-                              style: Theme.of(context).textTheme.displaySmall
-                                  ?.copyWith(color: AppTheme.primaryGreen),
-                              textAlign: TextAlign.center,
-                            ),
-                        ],
-                      ),
+                          : Text(_assistantResponse),
                     ),
-                  ],
                 ],
               ),
             ),
-
-            // Buttons
+            if (_analysis != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pronunciation Score: ${_analysis!.score}%',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text('ML Similarity: ${_analysis!.mlSimilarity}%'),
+                    Text('Phoneme Accuracy: ${_analysis!.phonemeAccuracy}%'),
+                    Text(
+                      'Lexical Similarity: ${_analysis!.lexicalSimilarity}%',
+                    ),
+                    const SizedBox(height: 6),
+                    Text(_analysis!.feedback),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: 54,
                     child: ElevatedButton.icon(
                       onPressed: _isListening
                           ? null
@@ -211,14 +259,12 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                       label: Text(_isListening ? 'Listening...' : 'Record'),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   if (_assistantResponse.isNotEmpty)
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () {
-                          _speakResponse();
-                        },
+                        onPressed: () => _speakResponse(language),
                         icon: const Icon(Icons.volume_up),
                         label: const Text('Listen Again'),
                       ),
@@ -226,26 +272,6 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                 ],
               ),
             ),
-
-            // Common Phrases
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    language == 'urdu'
-                        ? 'Common Urdu Phrases'
-                        : 'Common Punjabi Phrases',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: AppTheme.primaryGreen,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: GridView.builder(
@@ -264,14 +290,11 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                     child: InkWell(
                       onTap: () {
                         setState(() {
+                          _targetPhrase = phrase['word']!;
                           _recognizedText = phrase['word']!;
                           _assistantResponse =
                               '${phrase['emoji']} ${phrase['english']}';
-                        });
-                        Future.delayed(const Duration(milliseconds: 500), () {
-                          if (mounted) {
-                            _speakResponse();
-                          }
+                          _analysis = null;
                         });
                       },
                       child: Padding(
@@ -281,14 +304,10 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
                           children: [
                             Text(
                               phrase['emoji']!,
-                              style: const TextStyle(fontSize: 32),
+                              style: const TextStyle(fontSize: 30),
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              phrase['word']!,
-                              style: Theme.of(context).textTheme.bodySmall,
-                              textAlign: TextAlign.center,
-                            ),
+                            Text(phrase['word']!, textAlign: TextAlign.center),
                           ],
                         ),
                       ),
@@ -300,17 +319,6 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
             const SizedBox(height: 24),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedDot(int index) {
-    return Container(
-      width: 12,
-      height: 12,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppTheme.primaryGreen.withValues(alpha: 0.7),
       ),
     );
   }

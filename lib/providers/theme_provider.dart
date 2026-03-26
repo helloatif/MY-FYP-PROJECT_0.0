@@ -38,10 +38,6 @@ class ThemeProvider extends ChangeNotifier {
   /// Called when a user logs out — resets to light mode and clears user context.
   Future<void> resetForLogout() async {
     _userId = '';
-    if (_isDarkMode) {
-      _isDarkMode = false;
-      notifyListeners();
-    }
   }
 
   Future<void> toggleTheme() async {

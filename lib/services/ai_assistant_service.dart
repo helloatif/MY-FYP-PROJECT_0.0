@@ -2,17 +2,378 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../config/api_keys.dart';
+import 'translation_service.dart';
+import 'word_recommendation_service.dart';
+import 'ml_vocabulary_service.dart';
 
 /// AI Assistant for language learning help
+/// Enhanced with ML features for translation, word recommendations, and grammar
 class AIAssistantService {
   static const String _apiUrl =
       'https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill';
   static const String _apiToken = ApiKeys.huggingFaceToken;
 
   static final List<Map<String, String>> _conversationHistory = [];
+  static final TranslationService _translationService = TranslationService();
+  static final WordRecommendationService _recommendationService =
+      WordRecommendationService();
 
-  /// Get AI response for user query
+  // Current language context
+  static String _currentLanguage = 'urdu';
+
+  /// Set the current language context
+  static void setLanguage(String language) {
+    _currentLanguage = language;
+  }
+
+  /// Get AI response for user query - Enhanced with ML features
   static Future<String> getResponse(String userMessage) async {
+    // First, detect intent and handle with ML if applicable
+    final intent = _detectIntent(userMessage);
+
+    switch (intent) {
+      case AssistantIntent.translate:
+        return await _handleTranslation(userMessage);
+
+      case AssistantIntent.findSimilar:
+        return await _handleSimilarWords(userMessage);
+
+      case AssistantIntent.checkGrammar:
+        return await _handleGrammarCheck(userMessage);
+
+      case AssistantIntent.explain:
+        return await _handleExplanation(userMessage);
+
+      case AssistantIntent.pronunciation:
+        return _handlePronunciation(userMessage);
+
+      case AssistantIntent.general:
+      default:
+        return await _getGeneralResponse(userMessage);
+    }
+  }
+
+  /// Detect user intent from message
+  static AssistantIntent _detectIntent(String message) {
+    final lowerMessage = message.toLowerCase();
+
+    // Translation intent
+    if (lowerMessage.contains('translate') ||
+        lowerMessage.contains('ترجمہ') ||
+        lowerMessage.contains('how do you say') ||
+        lowerMessage.contains('what is') && lowerMessage.contains('in urdu') ||
+        lowerMessage.contains('what is') &&
+            lowerMessage.contains('in punjabi')) {
+      return AssistantIntent.translate;
+    }
+
+    // Similar words intent
+    if (lowerMessage.contains('similar') ||
+        lowerMessage.contains('like') && lowerMessage.contains('word') ||
+        lowerMessage.contains('related') ||
+        lowerMessage.contains('synonym')) {
+      return AssistantIntent.findSimilar;
+    }
+
+    // Grammar check intent
+    if (lowerMessage.contains('grammar') ||
+        lowerMessage.contains('correct') ||
+        lowerMessage.contains('check') && lowerMessage.contains('sentence') ||
+        lowerMessage.contains('is this right')) {
+      return AssistantIntent.checkGrammar;
+    }
+
+    // Explanation intent
+    if (lowerMessage.contains('explain') ||
+        lowerMessage.contains('what does') ||
+        lowerMessage.contains('meaning of') ||
+        lowerMessage.contains('کیا مطلب')) {
+      return AssistantIntent.explain;
+    }
+
+    // Pronunciation intent
+    if (lowerMessage.contains('pronounce') ||
+        lowerMessage.contains('pronunciation') ||
+        lowerMessage.contains('say') ||
+        lowerMessage.contains('speak')) {
+      return AssistantIntent.pronunciation;
+    }
+
+    return AssistantIntent.general;
+  }
+
+  /// Handle translation requests using ML
+  static Future<String> _handleTranslation(String message) async {
+    try {
+      // Extract text to translate
+      String textToTranslate = '';
+      String targetLanguage = _currentLanguage;
+
+      // Parse the request
+      final patterns = [
+        RegExp(
+          r'''translate\s+["']?(.+?)["']?(?:\s+to\s+(\w+))?$''',
+          caseSensitive: false,
+        ),
+        RegExp(
+          r'''how do you say\s+["']?(.+?)["']?\s+in\s+(\w+)''',
+          caseSensitive: false,
+        ),
+        RegExp(
+          r'''what is\s+["']?(.+?)["']?\s+in\s+(\w+)''',
+          caseSensitive: false,
+        ),
+      ];
+
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(message);
+        if (match != null) {
+          textToTranslate = match.group(1)?.trim() ?? '';
+          if (match.groupCount >= 2) {
+            targetLanguage = match.group(2) ?? _currentLanguage;
+          }
+          break;
+        }
+      }
+
+      if (textToTranslate.isEmpty) {
+        return 'Please tell me what you want to translate. For example:\n'
+            '• "Translate hello to Urdu"\n'
+            '• "How do you say thank you in Punjabi?"';
+      }
+
+      // Detect source language
+      final sourceLanguage = _detectSourceLanguage(textToTranslate);
+
+      // Perform translation
+      final result = await _translationService.translate(
+        text: textToTranslate,
+        from: sourceLanguage,
+        to: targetLanguage.toLowerCase(),
+      );
+
+      final pronunciation = _translationService.getPronunciationGuide(
+        result.translatedText,
+        targetLanguage.toLowerCase(),
+      );
+
+      return 'Translation:\n\n'
+          '"$textToTranslate"\n'
+          '→\n'
+          '"${result.translatedText}"\n\n'
+          'Pronunciation: $pronunciation\n'
+          'Confidence: ${(result.confidence * 100).round()}%';
+    } catch (e) {
+      debugPrint('Translation error: $e');
+      return 'I couldn\'t translate that. Please try again with a different phrase.';
+    }
+  }
+
+  /// Handle similar word requests using ML
+  static Future<String> _handleSimilarWords(String message) async {
+    try {
+      // Extract the word
+      final patterns = [
+        RegExp(
+          r'''similar\s+(?:to\s+|words?\s+(?:to|for)\s+)?["']?(\S+)["']?''',
+          caseSensitive: false,
+        ),
+        RegExp(r'''words?\s+like\s+["']?(\S+)["']?''', caseSensitive: false),
+        RegExp(
+          r'''related\s+(?:to\s+)?["']?(\S+)["']?''',
+          caseSensitive: false,
+        ),
+      ];
+
+      String word = '';
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(message);
+        if (match != null) {
+          word = match.group(1)?.trim() ?? '';
+          break;
+        }
+      }
+
+      if (word.isEmpty) {
+        return 'Please specify a word. For example:\n'
+            '• "Find words similar to خوشی"\n'
+            '• "Words like happy"';
+      }
+
+      // Find similar words
+      final similar = await _recommendationService.findSimilarWords(
+        word: word,
+        language: _currentLanguage,
+        count: 5,
+      );
+
+      if (similar.isEmpty) {
+        return 'I couldn\'t find similar words for "$word". Try a different word.';
+      }
+
+      final buffer = StringBuffer('🔗 Words similar to "$word":\n\n');
+      for (int i = 0; i < similar.length; i++) {
+        final rec = similar[i];
+        buffer.writeln('${i + 1}. ${rec.word.urdu} (${rec.word.english})');
+        buffer.writeln('   📊 Similarity: ${(rec.similarity * 100).round()}%');
+        buffer.writeln('   💡 ${rec.reason}');
+        buffer.writeln('');
+      }
+
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('Similar words error: $e');
+      return 'I couldn\'t find similar words. Please try again.';
+    }
+  }
+
+  /// Handle grammar check requests using ML
+  static Future<String> _handleGrammarCheck(String message) async {
+    try {
+      // Extract the sentence to check
+      final patterns = [
+        RegExp(
+          r'''(?:check|is)\s+(?:this\s+)?(?:grammar|correct|right)[:\s]+["']?(.+?)["']?$''',
+          caseSensitive: false,
+        ),
+        RegExp(
+          r'''(?:grammar|check)\s+["']?(.+?)["']?$''',
+          caseSensitive: false,
+        ),
+      ];
+
+      String sentenceToCheck = '';
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(message);
+        if (match != null) {
+          sentenceToCheck = match.group(1)?.trim() ?? '';
+          break;
+        }
+      }
+
+      if (sentenceToCheck.isEmpty) {
+        return 'Please provide a sentence to check. For example:\n'
+            '• "Check grammar: میں کھانا کھاتا ہے"\n'
+            '• "Is this correct: میں سکول جاتا ہوں"';
+      }
+
+      // Perform grammar check
+      final result = await MLVocabularyService.checkGrammarEnhanced(
+        userInput: sentenceToCheck,
+        expectedText: sentenceToCheck, // Self-check mode
+        language: _currentLanguage,
+      );
+
+      final buffer = StringBuffer('✏️ Grammar Check:\n\n');
+      buffer.writeln('"$sentenceToCheck"');
+      buffer.writeln('');
+      buffer.writeln('📊 Score: ${result.score}%');
+      buffer.writeln('${result.feedback}');
+
+      if (result.hasViolations) {
+        buffer.writeln('\n⚠️ Issues found:');
+        for (final violation in result.ruleViolations) {
+          buffer.writeln('• ${violation.message}');
+        }
+      }
+
+      if (result.suggestions.isNotEmpty) {
+        buffer.writeln('\n💡 Suggestions:');
+        for (final suggestion in result.suggestions) {
+          buffer.writeln('• $suggestion');
+        }
+      }
+
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('Grammar check error: $e');
+      return 'I couldn\'t check the grammar. Please try again.';
+    }
+  }
+
+  /// Handle word/phrase explanation requests
+  static Future<String> _handleExplanation(String message) async {
+    // Extract the word to explain
+    final patterns = [
+      RegExp(
+        r'''(?:explain|meaning of|what does)\s+["']?(.+?)["']?(?:\s+mean)?$''',
+        caseSensitive: false,
+      ),
+      RegExp(r'کیا مطلب\s+(.+)', caseSensitive: false),
+    ];
+
+    String word = '';
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(message);
+      if (match != null) {
+        word = match.group(1)?.trim() ?? '';
+        break;
+      }
+    }
+
+    if (word.isEmpty) {
+      return 'Please specify what you want me to explain.';
+    }
+
+    // Try to find the word in vocabulary
+    final similar = await _recommendationService.findSimilarWords(
+      word: word,
+      language: _currentLanguage,
+      count: 1,
+      minSimilarity: 0.8,
+    );
+
+    if (similar.isNotEmpty) {
+      final found = similar.first;
+      return '\"$word\"\n\n'
+          'Translation: ${found.word.english}\n'
+          '🔊 Pronunciation: ${found.word.pronunciation}\n'
+          '📌 Example: ${found.word.exampleSentence ?? "N/A"}\n'
+          '   (${found.word.exampleEnglish ?? ""})';
+    }
+
+    // If not found, translate
+    final translation = await _translationService.autoTranslate(
+      text: word,
+      targetLanguage: _detectSourceLanguage(word) == 'english'
+          ? _currentLanguage
+          : 'english',
+    );
+
+    return '\"$word\"\n\n'
+        'Meaning: ${translation.translatedText}\n'
+        '🔊 Pronunciation: ${_translationService.getPronunciationGuide(word, _currentLanguage)}';
+  }
+
+  /// Handle pronunciation requests
+  static String _handlePronunciation(String message) {
+    // Extract word
+    final match = RegExp(
+      r'''(?:pronounce|pronunciation|say|speak)\s+["']?(.+?)["']?$''',
+      caseSensitive: false,
+    ).firstMatch(message);
+
+    if (match != null) {
+      final word = match.group(1)?.trim() ?? '';
+      final pronunciation = _translationService.getPronunciationGuide(
+        word,
+        _currentLanguage,
+      );
+
+      return '🔊 Pronunciation for "$word":\n\n'
+          'romanized: $pronunciation\n\n'
+          '💡 Tips:\n'
+          '• Break it into syllables\n'
+          '• Practice each sound slowly\n'
+          '• Use the audio playback feature';
+    }
+
+    return 'Please specify a word to pronounce. For example:\n'
+        '• "How to pronounce شکریہ"';
+  }
+
+  /// Get general response (fallback to original behavior)
+  static Future<String> _getGeneralResponse(String userMessage) async {
     try {
       // Add user message to history
       _conversationHistory.add({'role': 'user', 'content': userMessage});
@@ -62,6 +423,20 @@ class AIAssistantService {
       debugPrint('AI Assistant Error: $e');
       return _getOfflineResponse(userMessage);
     }
+  }
+
+  /// Detect source language from text
+  static String _detectSourceLanguage(String text) {
+    final englishPattern = RegExp(r'[a-zA-Z]');
+    final urduPattern = RegExp(r'[\u0600-\u06FF]');
+
+    final englishCount = englishPattern.allMatches(text).length;
+    final urduCount = urduPattern.allMatches(text).length;
+
+    if (englishCount > urduCount) {
+      return 'english';
+    }
+    return _currentLanguage;
   }
 
   /// Build conversation context
@@ -203,30 +578,30 @@ class LearningRecommendationService {
 
     // Streak recommendations
     if (streak == 0) {
-      recommendations.add('🔥 Start a daily learning streak today!');
+      recommendations.add('Start a daily learning streak today!');
     } else if (streak < 7) {
-      recommendations.add(
-        '🔥 Keep going! $streak day streak - aim for 7 days!',
-      );
+      recommendations.add('Keep going! $streak day streak - aim for 7 days!');
     } else {
-      recommendations.add('🔥 Amazing! $streak day streak! You\'re on fire!');
+      recommendations.add(
+        'Amazing! $streak day streak! You\'re making great progress!',
+      );
     }
 
     // Points recommendations
     if (totalPoints < 100) {
-      recommendations.add('⭐ Complete more lessons to earn XP points!');
+      recommendations.add('Complete more lessons to earn XP points!');
     } else if (totalPoints < 500) {
-      recommendations.add('⭐ Great progress! Keep earning points!');
+      recommendations.add('Great progress! Keep earning points!');
     }
 
     // Weak area focus
     if (weakestArea.isNotEmpty) {
-      recommendations.add('📚 Focus on $weakestArea to improve faster');
+      recommendations.add('Focus on $weakestArea to improve faster');
     }
 
     // Practice recommendations
     if (completedLessons % 5 == 0 && completedLessons > 0) {
-      recommendations.add('🎯 Time to practice what you\'ve learned!');
+      recommendations.add('Time to practice what you\'ve learned!');
     }
 
     return recommendations;
@@ -240,4 +615,14 @@ class LearningRecommendationService {
     if (accuracy >= 0.4) return 'Beginner';
     return 'Novice';
   }
+}
+
+/// Intent types for AI assistant
+enum AssistantIntent {
+  translate,
+  findSimilar,
+  checkGrammar,
+  explain,
+  pronunciation,
+  general,
 }

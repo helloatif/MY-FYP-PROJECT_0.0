@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../config/api_keys.dart';
 
 /// Service for detecting language (Urdu vs Punjabi) using trained XLM-RoBERTa model
 class LanguageDetectionService {
@@ -8,12 +9,13 @@ class LanguageDetectionService {
   static const String _huggingFaceModel = 'RAFAY-484/Urdu-Punjabi-V2';
   static const String _apiEndpoint =
       'https://api-inference.huggingface.co/models/$_huggingFaceModel';
+  static const String _hfToken = ApiKeys.huggingFaceModelToken;
 
   /// Detect if text is Urdu (0) or Punjabi (1)
   Future<LanguageDetectionResult> detectLanguage(String text) async {
     try {
       // Try Hugging Face API first
-      return await _detectViaHuggingFace(text);
+      return await _detectViaHuggingFace(text, retry: 1);
     } catch (e) {
       debugPrint('Hugging Face API error: $e, falling back to rules');
       // Fallback: Rule-based detection
@@ -22,14 +24,25 @@ class LanguageDetectionService {
   }
 
   /// Detect language via Hugging Face Inference API
-  Future<LanguageDetectionResult> _detectViaHuggingFace(String text) async {
+  Future<LanguageDetectionResult> _detectViaHuggingFace(
+    String text, {
+    int retry = 1,
+  }) async {
     final response = await http
         .post(
           Uri.parse(_apiEndpoint),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_hfToken',
+          },
           body: jsonEncode({'inputs': text}),
         )
         .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 503 && retry > 0) {
+      await Future.delayed(const Duration(seconds: 2));
+      return _detectViaHuggingFace(text, retry: retry - 1);
+    }
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);

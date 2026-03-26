@@ -5,8 +5,10 @@
 
 part 'urdu_vocab_part1.dart';
 part 'urdu_vocab_part2.dart';
+part 'urdu_vocab_part3.dart';
 part 'punjabi_vocab_part1.dart';
 part 'punjabi_vocab_part2.dart';
+part 'punjabi_vocab_part3.dart';
 
 class VocabWord {
   final String urdu;
@@ -55,11 +57,13 @@ class VocabularyData {
   static final Map<String, List<LessonVocabulary>> urduLessons = {
     ..._urduChapters1to5,
     ..._urduChapters6to10,
+    ..._urduChapters11to15,
   };
 
   // PUNJABI - 10 chapters × 4 lessons × 25 words = 1000 words
   static final Map<String, List<LessonVocabulary>> punjabiLessons = {
     ..._punjabiChapters1to5,
     ..._punjabiChapters6to10,
+    ..._punjabiChapters11to15,
   };
 }

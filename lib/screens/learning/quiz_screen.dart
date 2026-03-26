@@ -5,7 +5,8 @@ import '../../providers/learning_provider.dart';
 import '../../providers/gamification_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/huggingface_api_service.dart';
-import '../../data/vocabulary_data.dart';
+import '../../services/quiz_generator_service.dart' as mlquiz;
+import '../../services/language_detection_service.dart';
 
 /// Quiz Types for different question styles
 enum QuizType { vocabulary, grammar, comprehension, mixed }
@@ -48,306 +49,25 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
-  late List<EnhancedQuizQuestion> _questions;
+  List<EnhancedQuizQuestion> _questions = [];
+  bool _isLoadingQuestions = true;
+  bool _questionsLoaded = false;
   int _currentQuestionIndex = 0;
   int _score = 0;
   int _totalPoints = 0;
   bool _showResult = false;
   bool _isCheckingAnswer = false;
   QuizScoreResult? _lastScoreResult;
+  String _languageDetectionNote = '';
+  String _loadError = '';
   final TextEditingController _answerController = TextEditingController();
+  final LanguageDetectionService _languageDetectionService =
+      LanguageDetectionService();
 
   late AnimationController _feedbackAnimationController;
   late Animation<double> _feedbackAnimation;
 
-  // Urdu vocabulary questions - generated from chapter
-  List<EnhancedQuizQuestion> _generateUrduQuestions() {
-    final chapterId = widget.chapter.id;
-    final lessonsList = VocabularyData.urduLessons[chapterId] ?? [];
-    final chapterVocab = lessonsList.expand((lesson) => lesson.words).toList();
-
-    if (chapterVocab.isEmpty) {
-      // Fallback questions
-      return [
-        EnhancedQuizQuestion(
-          id: '1',
-          question: 'What does "سلام" mean in English?',
-          options: ['Hello/Peace', 'Goodbye', 'Thank you', 'Sorry'],
-          correctAnswer: 'Hello/Peace',
-          wordToTranslate: 'سلام',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.multipleChoice,
-        ),
-        EnhancedQuizQuestion(
-          id: '2',
-          question: 'Write the Urdu word for "Thank you"',
-          correctAnswer: 'شکریہ',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.freeText,
-          explanation: 'شکریہ (shukriya) is used to express gratitude',
-        ),
-        EnhancedQuizQuestion(
-          id: '3',
-          question: 'Is this sentence correct? "میں اچھا ہوں" (I am fine)',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          questionType: QuizType.grammar,
-          answerType: AnswerType.trueFalse,
-        ),
-      ];
-    }
-
-    // Generate questions from vocabulary
-    List<EnhancedQuizQuestion> questions = [];
-    final shuffledVocab = List.from(chapterVocab)..shuffle();
-
-    for (int i = 0; i < shuffledVocab.length.clamp(0, 10); i++) {
-      final word = shuffledVocab[i];
-      final wrongOptions = chapterVocab
-          .where((w) => w.english != word.english)
-          .take(3)
-          .map((w) => w.english)
-          .toList();
-
-      if (i % 3 == 0) {
-        // Multiple choice
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'What does "${word.urdu}" mean?',
-            options: [word.english, ...wrongOptions]..shuffle(),
-            correctAnswer: word.english,
-            wordToTranslate: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.multipleChoice,
-          ),
-        );
-      } else if (i % 3 == 1) {
-        // Free text - write in Urdu
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'Write "${word.english}" in Urdu',
-            correctAnswer: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.freeText,
-            explanation: 'Pronunciation: ${word.pronunciation}',
-          ),
-        );
-      } else {
-        // Fill in blank
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'Complete: "${word.pronunciation}" is written as ___',
-            correctAnswer: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.fillInBlank,
-          ),
-        );
-      }
-    }
-
-    // Add sentence-based questions
-    final wordsWithSentences = chapterVocab.where((w) => w.hasSentence).toList()
-      ..shuffle();
-    for (int i = 0; i < wordsWithSentences.length.clamp(0, 5); i++) {
-      final word = wordsWithSentences[i];
-      if (i % 2 == 0) {
-        // Sentence translation MCQ
-        final wrongSentences = wordsWithSentences
-            .where((w) => w.exampleEnglish != word.exampleEnglish)
-            .take(3)
-            .map((w) => w.exampleEnglish!)
-            .toList();
-        if (wrongSentences.length >= 2) {
-          questions.add(
-            EnhancedQuizQuestion(
-              id: 'sq_$i',
-              question:
-                  'What does this sentence mean?\n"${word.exampleSentence}"',
-              options: [word.exampleEnglish!, ...wrongSentences]..shuffle(),
-              correctAnswer: word.exampleEnglish!,
-              questionType: QuizType.comprehension,
-              answerType: AnswerType.multipleChoice,
-            ),
-          );
-        }
-      } else {
-        // Write the sentence
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'sq_$i',
-            question: 'Translate to Urdu:\n"${word.exampleEnglish}"',
-            correctAnswer: word.exampleSentence!,
-            questionType: QuizType.comprehension,
-            answerType: AnswerType.freeText,
-            explanation: 'Answer: ${word.exampleSentence}',
-          ),
-        );
-      }
-    }
-    questions.shuffle();
-
-    return questions.isEmpty ? _getFallbackQuestions('urdu') : questions;
-  }
-
-  // Punjabi vocabulary questions
-  List<EnhancedQuizQuestion> _generatePunjabiQuestions() {
-    final chapterId = widget.chapter.id;
-    final lessonsList = VocabularyData.punjabiLessons[chapterId] ?? [];
-    final chapterVocab = lessonsList.expand((lesson) => lesson.words).toList();
-
-    if (chapterVocab.isEmpty) {
-      return _getFallbackQuestions('punjabi');
-    }
-
-    List<EnhancedQuizQuestion> questions = [];
-    final shuffledVocab = List.from(chapterVocab)..shuffle();
-
-    for (int i = 0; i < shuffledVocab.length.clamp(0, 10); i++) {
-      final word = shuffledVocab[i];
-      final wrongOptions = chapterVocab
-          .where((w) => w.english != word.english)
-          .take(3)
-          .map((w) => w.english)
-          .toList();
-
-      if (i % 3 == 0) {
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'What does "${word.urdu}" mean?',
-            options: [word.english, ...wrongOptions]..shuffle(),
-            correctAnswer: word.english,
-            wordToTranslate: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.multipleChoice,
-          ),
-        );
-      } else if (i % 3 == 1) {
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'Write "${word.english}" in Punjabi',
-            correctAnswer: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.freeText,
-            explanation: 'Pronunciation: ${word.pronunciation}',
-          ),
-        );
-      } else {
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'q_$i',
-            question: 'Complete: "${word.pronunciation}" is written as ___',
-            correctAnswer: word.urdu,
-            questionType: QuizType.vocabulary,
-            answerType: AnswerType.fillInBlank,
-          ),
-        );
-      }
-    }
-
-    // Add sentence-based questions
-    final wordsWithSentences = chapterVocab.where((w) => w.hasSentence).toList()
-      ..shuffle();
-    for (int i = 0; i < wordsWithSentences.length.clamp(0, 5); i++) {
-      final word = wordsWithSentences[i];
-      if (i % 2 == 0) {
-        // Sentence translation MCQ
-        final wrongSentences = wordsWithSentences
-            .where((w) => w.exampleEnglish != word.exampleEnglish)
-            .take(3)
-            .map((w) => w.exampleEnglish!)
-            .toList();
-        if (wrongSentences.length >= 2) {
-          questions.add(
-            EnhancedQuizQuestion(
-              id: 'sq_$i',
-              question:
-                  'What does this sentence mean?\n"${word.exampleSentence}"',
-              options: [word.exampleEnglish!, ...wrongSentences]..shuffle(),
-              correctAnswer: word.exampleEnglish!,
-              questionType: QuizType.comprehension,
-              answerType: AnswerType.multipleChoice,
-            ),
-          );
-        }
-      } else {
-        // Write the sentence
-        questions.add(
-          EnhancedQuizQuestion(
-            id: 'sq_$i',
-            question: 'Translate to Punjabi:\n"${word.exampleEnglish}"',
-            correctAnswer: word.exampleSentence!,
-            questionType: QuizType.comprehension,
-            answerType: AnswerType.freeText,
-            explanation: 'Answer: ${word.exampleSentence}',
-          ),
-        );
-      }
-    }
-    questions.shuffle();
-
-    return questions.isEmpty ? _getFallbackQuestions('punjabi') : questions;
-  }
-
-  List<EnhancedQuizQuestion> _getFallbackQuestions(String language) {
-    if (language == 'urdu') {
-      return [
-        EnhancedQuizQuestion(
-          id: '1',
-          question: 'What is the Urdu word for "Hello"?',
-          options: ['سلام', 'شکریہ', 'خدا حافظ', 'جی'],
-          correctAnswer: 'سلام',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.multipleChoice,
-        ),
-        EnhancedQuizQuestion(
-          id: '2',
-          question: 'Write "Thank you" in Urdu',
-          correctAnswer: 'شکریہ',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.freeText,
-        ),
-        EnhancedQuizQuestion(
-          id: '3',
-          question: '"میں ٹھیک ہوں" means "I am fine"',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          questionType: QuizType.grammar,
-          answerType: AnswerType.trueFalse,
-        ),
-      ];
-    } else {
-      return [
-        EnhancedQuizQuestion(
-          id: '1',
-          question: 'What is the Punjabi greeting?',
-          options: ['سلام', 'شکریہ', 'ٹھیک', 'جی'],
-          correctAnswer: 'سلام',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.multipleChoice,
-        ),
-        EnhancedQuizQuestion(
-          id: '2',
-          question: 'Write "How are you" in Punjabi',
-          correctAnswer: 'کی حال اے',
-          questionType: QuizType.vocabulary,
-          answerType: AnswerType.freeText,
-        ),
-        EnhancedQuizQuestion(
-          id: '3',
-          question: '"میں ٹھیک آں" means "I am fine"',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          questionType: QuizType.grammar,
-          answerType: AnswerType.trueFalse,
-        ),
-      ];
-    }
-  }
+  // ML-only mode: local hardcoded/content fallbacks are intentionally disabled.
 
   @override
   void initState() {
@@ -372,17 +92,81 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_questionsLoaded) return;
+    _questionsLoaded = true;
+    _loadQuestions();
+  }
+
+  Future<void> _loadQuestions() async {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final language = userProvider.currentUser?.selectedLanguage ?? 'urdu';
 
-    _questions = language == 'urdu'
-        ? _generateUrduQuestions()
-        : _generatePunjabiQuestions();
+    setState(() {
+      _isLoadingQuestions = true;
+    });
+
+    try {
+      final mlQuestions =
+          await mlquiz.QuizGeneratorService.generateMLEnhancedQuiz(
+            chapterId: widget.chapter.id,
+            lessonIndex: 0,
+            language: language,
+            questionCount: 12,
+            useSemanticDistractors: true,
+          );
+
+      if (mlQuestions.isNotEmpty) {
+        _questions = mlQuestions.map(_convertMlQuestion).toList();
+        _loadError = '';
+      } else {
+        _questions = [];
+        _loadError =
+            'XLM-RoBERTa did not return quiz questions for this chapter.';
+      }
+    } catch (e) {
+      _questions = [];
+      _loadError = 'Failed to load quiz from XLM-RoBERTa.';
+      debugPrint('Quiz ML-only load error: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isLoadingQuestions = false;
+    });
+  }
+
+  EnhancedQuizQuestion _convertMlQuestion(mlquiz.QuizQuestion q) {
+    final answerType = q.isMultipleChoice
+        ? AnswerType.multipleChoice
+        : AnswerType.freeText;
+
+    final qType = switch (q.type) {
+      mlquiz.QuizType.grammar => QuizType.grammar,
+      mlquiz.QuizType.comprehension => QuizType.comprehension,
+      _ => QuizType.vocabulary,
+    };
+
+    return EnhancedQuizQuestion(
+      id: q.id,
+      question: q.question,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      wordToTranslate: q.questionUrdu,
+      questionType: qType,
+      answerType: answerType,
+      explanation: q.hint,
+    );
   }
 
   Future<void> _answerQuestion(String selectedAnswer) async {
     final currentQuestion = _questions[_currentQuestionIndex];
     currentQuestion.selectedAnswer = selectedAnswer;
+    final expectedLanguage =
+        Provider.of<UserProvider>(
+          context,
+          listen: false,
+        ).currentUser?.selectedLanguage ??
+        'urdu';
 
     setState(() {
       _isCheckingAnswer = true;
@@ -392,10 +176,37 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       // Use ML scoring for free text and fill-in-blank
       if (currentQuestion.answerType == AnswerType.freeText ||
           currentQuestion.answerType == AnswerType.fillInBlank) {
+        final detected = await _languageDetectionService.detectLanguage(
+          selectedAnswer,
+        );
+
         _lastScoreResult = await HuggingFaceApiService.scoreAnswer(
           userInput: selectedAnswer,
           correctAnswer: currentQuestion.correctAnswer,
         );
+
+        final hasLanguageMismatch =
+            detected.language != expectedLanguage &&
+            detected.confidence >= 0.65;
+
+        if (hasLanguageMismatch) {
+          final penalizedScore = (_lastScoreResult!.score - 20).clamp(0, 100);
+          _lastScoreResult = QuizScoreResult(
+            score: penalizedScore,
+            feedback:
+                'Language mismatch detected (${detected.language}). ${_lastScoreResult!.feedback}',
+            feedbackUrdu: _lastScoreResult!.feedbackUrdu,
+            isCorrect: penalizedScore >= 80,
+            confidence: _lastScoreResult!.confidence,
+            userInput: _lastScoreResult!.userInput,
+            correctAnswer: _lastScoreResult!.correctAnswer,
+          );
+          _languageDetectionNote =
+              'Detected ${detected.language} with ${(detected.confidence * 100).round()}% confidence.';
+        } else {
+          _languageDetectionNote =
+              'Detected ${detected.language} (${(detected.confidence * 100).round()}%).';
+        }
 
         if (_lastScoreResult!.isCorrect) {
           _score++;
@@ -410,23 +221,23 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             score: 100,
             feedback: 'Perfect!',
             feedbackUrdu: 'بالکل درست!',
-            emoji: '✅',
             isCorrect: true,
             confidence: 100,
             userInput: selectedAnswer,
             correctAnswer: currentQuestion.correctAnswer,
           );
+          _languageDetectionNote = '';
         } else {
           _lastScoreResult = QuizScoreResult(
             score: 0,
             feedback: 'Incorrect',
             feedbackUrdu: 'غلط',
-            emoji: '❌',
             isCorrect: false,
             confidence: 100,
             userInput: selectedAnswer,
             correctAnswer: currentQuestion.correctAnswer,
           );
+          _languageDetectionNote = '';
         }
       }
     } catch (e) {
@@ -451,6 +262,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             _currentQuestionIndex++;
             _showResult = false;
             _lastScoreResult = null;
+            _languageDetectionNote = '';
             _answerController.clear();
           });
         } else {
@@ -588,7 +400,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                           child: CircularProgressIndicator(
                             value: value,
                             strokeWidth: 8,
-                            backgroundColor: Colors.grey.shade200,
+                            backgroundColor:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? AppTheme.darkSurfaceVariant
+                                : Colors.grey.shade200,
                             valueColor: AlwaysStoppedAnimation(
                               percentage >= 80
                                   ? AppTheme.primaryGreen
@@ -756,12 +571,45 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final userProvider = Provider.of<UserProvider>(context);
-    final language = userProvider.currentUser?.selectedLanguage ?? 'urdu';
+    if (_isLoadingQuestions) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_questions.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Quiz')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _loadError.isNotEmpty
+                      ? _loadError
+                      : 'No quiz questions available from XLM-RoBERTa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _loadQuestions,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry ML Load'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final currentQuestion = _questions[_currentQuestionIndex];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF5F7FA),
       body: SafeArea(
         child: Column(
           children: [
@@ -1316,6 +1164,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+            if (_languageDetectionNote.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _languageDetectionNote,
+                  style: const TextStyle(fontSize: 13),
                 ),
               ),
             ],
